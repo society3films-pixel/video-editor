@@ -224,6 +224,21 @@ $env:CARGO_PROFILE_RELEASE_LTO = "off"
 $env:CARGO_PROFILE_RELEASE_INCREMENTAL = "true"
 $env:CARGO_PROFILE_RELEASE_OPT_LEVEL = "2"
 $env:CARGO_PROFILE_RELEASE_STRIP = "none"
+# sherpa-onnx-sys only re-runs its build script when SHERPA_* variables change, so output from
+# an earlier build with a relative CARGO_TARGET_DIR (e.g. `npm run tauri:build:fast`) keeps the
+# broken relative link path. Delete such stale output so it is regenerated.
+Get-ChildItem -Path (Join-Path $env:CARGO_TARGET_DIR "release\build") -Directory -Filter "sherpa-onnx-sys-*" -ErrorAction SilentlyContinue |
+  Where-Object {
+    $output = Join-Path $_.FullName "output"
+    (Test-Path $output) -and (Select-String -Path $output -Pattern 'rustc-link-search=native=(?![A-Za-z]:)' -Quiet)
+  } |
+  ForEach-Object {
+    Write-Host "Removing stale sherpa-onnx build output: $($_.Name)"
+    Remove-Item -Recurse -Force $_.FullName
+    # Drop the matching fingerprints too, so Cargo re-runs the build script instead of replaying it.
+    Get-ChildItem -Path (Join-Path $env:CARGO_TARGET_DIR "release\.fingerprint") -Directory -Filter "sherpa-onnx-sys-*" -ErrorAction SilentlyContinue |
+      Remove-Item -Recurse -Force
+  }
 Invoke-Checked "The app build" { node (Join-Path $ProjectRoot "scripts\run-tauri.mjs") build --no-bundle }
 
 # Make sure every runtime DLL sits next to the exe.
