@@ -147,6 +147,14 @@ describe("framing keyframe editing", () => {
     expect(all.keyframes.map((k) => k.t)).toEqual([2.5, 6.5, 9]);
   });
 
+  it("removes split panels when a shot leaves split screen", () => {
+    const split = [{ x: 0.3, y: 0.5, zoom: 1 }, { x: 0.7, y: 0.5, zoom: 1 }];
+    let track = setFramingAt(empty, boundaries, 1, { ...zoomed, split });
+    expect(track.keyframes[0].split).toHaveLength(2);
+    track = setFramingAt(track, boundaries, 1, { ...zoomed, singleShot: true });
+    expect(track.keyframes[0].split).toBeUndefined();
+  });
+
   it("splits parts at shot changes", () => {
     const split = splitClipEditAtShots(createInitialClipEdit(10), [3, 7]);
     expect(split.segments.map((s) => [s.start, s.end])).toEqual([[0, 3], [3, 7], [7, 10]]);

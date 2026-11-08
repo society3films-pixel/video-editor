@@ -13,7 +13,13 @@ import {
   sourceToOutputTime,
   type ClipEdit,
 } from "./clip-edit.util";
-import type { ClipperFramingValue } from "../engine/render/framing-override.util";
+import {
+  defaultSplitPanels,
+  forcedSplitDestinations,
+  splitPanelCrop,
+  type ClipperFramingValue,
+  type ClipperSplitPanel,
+} from "../engine/render/framing-override.util";
 import type { ClipEditorSource } from "./clip-editor-source.util";
 
 /** Largest preview canvas height; the final render still uses the full export size. */
@@ -142,4 +148,52 @@ export function dragFraming(
     x: Math.max(0, Math.min(1, framing.x - (dx / preview.width) * cropWFraction)),
     y: Math.max(0, Math.min(1, framing.y - (dy / preview.height) * cropHFraction)),
   };
+}
+
+/**
+ * Panels to start a forced split screen from: the AI's own split at this moment when it has
+ * one, otherwise the left and right thirds of the frame.
+ */
+export function splitPanelsFromAi(
+  source: ClipEditorSource,
+  baseFrameContext: ClipperFrameContext,
+  videoSize: FrameEffectSize,
+  videoTime: number,
+): ClipperSplitPanel[] {
+  const geometry = resolveClipperFrameGeometry(source.formatDef, videoSize, source.outputSize, videoTime, {
+    ...baseFrameContext,
+    framing: undefined,
+  });
+  if (geometry.mode !== "split" || geometry.panels.length < 2) return defaultSplitPanels();
+  const destinations = forcedSplitDestinations(source.outputSize);
+  return geometry.panels.slice(0, 2).map((panel, index) => {
+    const crop = panel.source;
+    const natural = splitPanelCrop({ x: 0.5, y: 0.5, zoom: 1 }, destinations[index]!, videoSize);
+    return {
+      x: (crop.sx + crop.sw / 2) / videoSize.width,
+      y: (crop.sy + crop.sh / 2) / videoSize.height,
+      zoom: Math.max(1, Math.min(3, natural.sw / Math.max(1, crop.sw))),
+    };
+  });
+}
+
+/** Moves one split-screen panel by a drag of (dx, dy) preview pixels. */
+export function dragSplitPanel(
+  panels: readonly ClipperSplitPanel[],
+  index: number,
+  dx: number,
+  dy: number,
+  preview: FrameEffectSize,
+  videoSize: FrameEffectSize,
+): ClipperSplitPanel[] {
+  const destination = forcedSplitDestinations(preview)[index];
+  const panel = panels[index];
+  if (!destination || !panel) return [...panels];
+  const crop = splitPanelCrop(panel, destination, videoSize);
+  const next = {
+    ...panel,
+    x: Math.max(0, Math.min(1, panel.x - (dx / destination.width) * (crop.sw / videoSize.width))),
+    y: Math.max(0, Math.min(1, panel.y - (dy / destination.height) * (crop.sh / videoSize.height))),
+  };
+  return panels.map((item, i) => (i === index ? next : item));
 }

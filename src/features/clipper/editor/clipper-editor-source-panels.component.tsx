@@ -1,12 +1,17 @@
 import React from "react";
 import { Box, HStack, Text, VStack } from "@chakra-ui/react";
-import { Crosshair, Diamond, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, X } from "lucide-react";
+import { ArrowUpDown, Columns2, Crosshair, Diamond, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, Square, Wand, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import { captionGroupText, formatEditorTime } from "./clip-edit.util";
-import type { ClipFramingKeyframe, ClipperFramingValue } from "../engine/render/framing-override.util";
+import {
+  isForcedSplit,
+  type ClipFramingKeyframe,
+  type ClipperFramingValue,
+  type ClipperSplitPanel,
+} from "../engine/render/framing-override.util";
 import { Section, SliderRow, fieldStyle } from "./clipper-editor-side-panel.component";
 
 function ChoiceButton({
@@ -143,6 +148,10 @@ interface FramingPanelProps {
   currentTime: number;
   onChange: (value: ClipperFramingValue) => void;
   onLock: () => void;
+  /** Switches the shot to a forced split screen (panels start from the AI's view). */
+  onForceSplit: () => void;
+  /** Landscape outputs put split panels side by side instead of stacked. */
+  sideBySide: boolean;
   onAddKeyframe: () => void;
   onRemoveKeyframe: (id: string) => void;
   onSeek: (localTime: number) => void;
@@ -163,6 +172,8 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
   currentTime,
   onChange,
   onLock,
+  onForceSplit,
+  sideBySide,
   onAddKeyframe,
   onRemoveKeyframe,
   onSeek,
@@ -174,6 +185,11 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
   const { theme } = useClipperUi();
   const current = value ?? DEFAULT_VALUE;
   const update = (patch: Partial<ClipperFramingValue>) => onChange({ ...current, ...patch });
+  const split = isForcedSplit(current);
+  const layout: "ai" | "single" | "split" = split ? "split" : current.singleShot ? "single" : "ai";
+  const panelNames = sideBySide ? ["Left panel", "Right panel"] : ["Top panel", "Bottom panel"];
+  const updatePanel = (index: number, patch: Partial<ClipperSplitPanel>) =>
+    update({ split: current.split!.map((panel, i) => (i === index ? { ...panel, ...patch } : panel)) });
   const animated = keyframes.length >= 2;
   const smallButton = { h: "30px", fontSize: "xs", px: 2, justifyContent: "center" } as const;
 
@@ -188,54 +204,102 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
               ? `Camera moves between ${keyframes.length} keyframes`
               : "Your framing for the whole shot"}
         </Text>
+        <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
+          Layout
+        </Text>
         <HStack gap={2}>
           <ChoiceButton
-            selected={current.mode === "auto"}
-            onClick={() => current.mode !== "auto" && update({ mode: "auto", x: 0, y: 0, zoom: 1 })}
-            title="Follow the AI camera, optionally nudged"
+            selected={layout === "ai"}
+            onClick={() => layout !== "ai" && update({ singleShot: false, split: undefined })}
+            title="Let the AI choose between one shot and split screen"
           >
-            <Sparkles size={13} /> Follow AI
+            <Wand size={13} /> AI decides
           </ChoiceButton>
           <ChoiceButton
-            selected={current.mode === "fixed"}
-            onClick={() => current.mode !== "fixed" && onLock()}
-            title="Place the camera yourself"
+            selected={layout === "single"}
+            onClick={() => layout !== "single" && update({ singleShot: true, split: undefined })}
+            title="Always one shot, never split screen"
           >
-            <Crosshair size={13} /> Manual
+            <Square size={13} /> One shot
+          </ChoiceButton>
+          <ChoiceButton
+            selected={layout === "split"}
+            onClick={() => layout !== "split" && onForceSplit()}
+            title="Always split screen, with two panels you position"
+          >
+            <Columns2 size={13} /> Split
           </ChoiceButton>
         </HStack>
-        <Text fontSize="xs" color={theme.text.muted}>
-          Drag the picture to reposition. Changes apply to this shot only; other shots keep their framing.
-        </Text>
-        <SliderRow
-          label="Zoom"
-          value={current.zoom}
-          min={1}
-          max={3}
-          step={0.05}
-          display={`${Math.round(current.zoom * 100)}%`}
-          onChange={(zoom) => update({ zoom })}
-        />
-        {current.mode === "fixed" ? (
+
+        {split ? (
           <>
-            <SliderRow label="Horizontal" value={current.x} min={0} max={1} step={0.005} display={`${Math.round(current.x * 100)}%`} onChange={(x) => update({ x })} />
-            <SliderRow label="Vertical" value={current.y} min={0} max={1} step={0.005} display={`${Math.round(current.y * 100)}%`} onChange={(y) => update({ y })} />
+            <Text fontSize="xs" color={theme.text.muted}>
+              Drag inside a panel to reposition it. Changes apply to this shot only.
+            </Text>
+            {current.split!.slice(0, 2).map((panel, index) => (
+              <VStack key={index} align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+                <Text fontSize="xs" fontWeight="semibold">
+                  {panelNames[index]}
+                </Text>
+                <SliderRow label="Zoom" value={panel.zoom} min={1} max={3} step={0.05} display={`${Math.round(panel.zoom * 100)}%`} onChange={(zoom) => updatePanel(index, { zoom })} />
+                <SliderRow label="Horizontal" value={panel.x} min={0} max={1} step={0.005} display={`${Math.round(panel.x * 100)}%`} onChange={(x) => updatePanel(index, { x })} />
+                <SliderRow label="Vertical" value={panel.y} min={0} max={1} step={0.005} display={`${Math.round(panel.y * 100)}%`} onChange={(y) => updatePanel(index, { y })} />
+              </VStack>
+            ))}
+            <OutlinedActionButton
+              {...smallButton}
+              startIcon={<ArrowUpDown size={13} />}
+              onClick={() => update({ split: [current.split![1]!, current.split![0]!] })}
+            >
+              Swap panels
+            </OutlinedActionButton>
           </>
         ) : (
           <>
-            <SliderRow label="Nudge left / right" value={current.x} min={-1} max={1} step={0.01} display={`${Math.round(current.x * 100)}`} onChange={(x) => update({ x })} />
-            <SliderRow label="Nudge up / down" value={current.y} min={-1} max={1} step={0.01} display={`${Math.round(current.y * 100)}`} onChange={(y) => update({ y })} />
+            <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
+              Camera
+            </Text>
+            <HStack gap={2}>
+              <ChoiceButton
+                selected={current.mode === "auto"}
+                onClick={() => current.mode !== "auto" && update({ mode: "auto", x: 0, y: 0, zoom: 1 })}
+                title="Follow the AI camera, optionally nudged"
+              >
+                <Sparkles size={13} /> Follow AI
+              </ChoiceButton>
+              <ChoiceButton
+                selected={current.mode === "fixed"}
+                onClick={() => current.mode !== "fixed" && onLock()}
+                title="Place the camera yourself"
+              >
+                <Crosshair size={13} /> Manual
+              </ChoiceButton>
+            </HStack>
+            <Text fontSize="xs" color={theme.text.muted}>
+              Drag the picture to reposition. Changes apply to this shot only; other shots keep their framing.
+            </Text>
+            <SliderRow
+              label="Zoom"
+              value={current.zoom}
+              min={1}
+              max={3}
+              step={0.05}
+              display={`${Math.round(current.zoom * 100)}%`}
+              onChange={(zoom) => update({ zoom })}
+            />
+            {current.mode === "fixed" ? (
+              <>
+                <SliderRow label="Horizontal" value={current.x} min={0} max={1} step={0.005} display={`${Math.round(current.x * 100)}%`} onChange={(x) => update({ x })} />
+                <SliderRow label="Vertical" value={current.y} min={0} max={1} step={0.005} display={`${Math.round(current.y * 100)}%`} onChange={(y) => update({ y })} />
+              </>
+            ) : (
+              <>
+                <SliderRow label="Nudge left / right" value={current.x} min={-1} max={1} step={0.01} display={`${Math.round(current.x * 100)}`} onChange={(x) => update({ x })} />
+                <SliderRow label="Nudge up / down" value={current.y} min={-1} max={1} step={0.01} display={`${Math.round(current.y * 100)}`} onChange={(y) => update({ y })} />
+              </>
+            )}
           </>
         )}
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={current.singleShot}
-            onChange={(event) => update({ singleShot: event.target.checked })}
-            style={{ accentColor: clipperTheme.accent }}
-          />
-          No split screen in this shot
-        </label>
         <HStack gap={2}>
           <OutlinedActionButton flex={1} {...smallButton} startIcon={<RotateCcw size={13} />} onClick={onResetShot} disabled={keyframes.length === 0}>
             Back to AI
@@ -286,7 +350,9 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
                     <Diamond size={11} fill={active ? clipperTheme.accentGlow : "none"} color={clipperTheme.accentGlow} />
                     <Text fontSize="xs" fontFamily="mono">{formatEditorTime(keyframe.t)}</Text>
                     <Text fontSize="xs" color={theme.text.muted}>
-                      {keyframe.mode === "fixed" ? "Manual" : "Follow AI"} · {Math.round(keyframe.zoom * 100)}%
+                      {isForcedSplit(keyframe)
+                        ? "Split screen"
+                        : `${keyframe.mode === "fixed" ? "Manual" : "Follow AI"} · ${Math.round(keyframe.zoom * 100)}%`}
                     </Text>
                   </Box>
                   <Box

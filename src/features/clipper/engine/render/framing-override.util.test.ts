@@ -8,6 +8,9 @@ vi.hoisted(() => {
 import {
   applyFramingOverride,
   evaluateFramingTrack,
+  forcedSplitDestinations,
+  forcedSplitLayout,
+  splitPanelIndexAt,
   shotRangeAt,
   type ClipFramingKeyframe,
   type ClipperFramingValue,
@@ -94,5 +97,49 @@ describe("frame geometry with framing", () => {
     });
     expect(base.panels[0]!.source.sx).toBeGreaterThan(0);
     expect(framed.panels[0]!.source.sx).toBe(0);
+  });
+});
+
+describe("forced split screen", () => {
+  const split = [
+    { x: 0.25, y: 0.5, zoom: 2 },
+    { x: 0.75, y: 0.5, zoom: 4 },
+  ];
+
+  it("stacks two panels on vertical outputs and puts them side by side on landscape", () => {
+    expect(forcedSplitDestinations({ width: 1080, height: 1920 })).toEqual([
+      { x: 0, y: 0, width: 1080, height: 960 },
+      { x: 0, y: 960, width: 1080, height: 960 },
+    ]);
+    expect(forcedSplitDestinations({ width: 1920, height: 1080 }).map((d) => d.x)).toEqual([0, 960]);
+    expect(splitPanelIndexAt({ width: 1080, height: 1920 }, 500, 1500)).toBe(1);
+  });
+
+  it("crops each panel to its own shape around its point", () => {
+    const [top, bottom] = forcedSplitLayout(split, source, output);
+    expect(top!.source.sw / top!.source.sh).toBeCloseTo(1080 / 960);
+    expect(top!.source.sx + top!.source.sw / 2).toBeCloseTo(0.25 * 1920);
+    expect(bottom!.source.sw).toBeCloseTo(top!.source.sw / 1.5); // zoom is capped at 3
+    // At zoom 1 the panel is too wide to centre on the left third, so it is kept inside the frame.
+    const [wide] = forcedSplitLayout([{ x: 0.25, y: 0.5, zoom: 1 }, split[1]!], source, output);
+    expect(wide!.source.sx).toBe(0);
+  });
+
+  it("overrides the AI layout in frame geometry", () => {
+    const formatDef = getClipperFormatDef("tiktok")!;
+    const geometry = resolveClipperFrameGeometry(formatDef, source, output, 1, {
+      disabledCollageRegionIds: [],
+      framing: { track: { keyframes: [{ ...kf(0), split }], extraShotBoundaries: [] }, aiShotBoundaries: [] },
+    });
+    expect(geometry.mode).toBe("split");
+    expect(geometry.panels).toHaveLength(2);
+  });
+
+  it("glides split panels between keyframes and steps when the layout changes", () => {
+    const moved = [{ x: 0.35, y: 0.5, zoom: 1 }, { x: 0.75, y: 0.5, zoom: 2 }];
+    const track = { keyframes: [{ ...kf(0), split }, { ...kf(2), split: moved }, kf(4)], extraShotBoundaries: [] };
+    expect(evaluateFramingTrack(track, [], 1)?.split?.[0]?.x).toBeCloseTo(0.3);
+    expect(evaluateFramingTrack(track, [], 3)?.split).toBeDefined();
+    expect(evaluateFramingTrack(track, [], 4)?.split).toBeUndefined();
   });
 });

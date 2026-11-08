@@ -15,6 +15,19 @@ export interface ClipperFramingValue {
   zoom: number;
   /** Replace AI split-screen layouts with a single shot. */
   singleShot: boolean;
+  /**
+   * Force a two-panel split screen with these panels (first = top, or left on landscape
+   * outputs). When set, `mode`/`x`/`y`/`zoom`/`singleShot` are ignored.
+   */
+  split?: ClipperSplitPanel[];
+}
+
+/** One panel of a forced split screen: a camera centred on `x`/`y` (0..1 of the source). */
+export interface ClipperSplitPanel {
+  x: number;
+  y: number;
+  /** 1 = the largest crop of the panel's shape that fits the source. */
+  zoom: number;
 }
 
 /** A framing value pinned to a clip-local time. */
@@ -96,7 +109,19 @@ function smoothstep(u: number): number {
 }
 
 function toValue(keyframe: ClipFramingKeyframe): ClipperFramingValue {
-  return { mode: keyframe.mode, x: keyframe.x, y: keyframe.y, zoom: keyframe.zoom, singleShot: keyframe.singleShot };
+  const value: ClipperFramingValue = {
+    mode: keyframe.mode,
+    x: keyframe.x,
+    y: keyframe.y,
+    zoom: keyframe.zoom,
+    singleShot: keyframe.singleShot,
+  };
+  if (isForcedSplit(keyframe)) value.split = keyframe.split!.map((panel) => ({ ...panel }));
+  return value;
+}
+
+export function isForcedSplit(value: Pick<ClipperFramingValue, "split"> | undefined): boolean {
+  return Boolean(value?.split && value.split.length >= 2);
 }
 
 /** Framing at a clip-local time from keyframes in the same shot, or undefined for AI framing. */
@@ -119,8 +144,22 @@ export function evaluateFramingTrack(
   }
   if (!previous && !next) return undefined;
   if (!previous) return toValue(next!);
-  if (!next || next.mode !== previous.mode || next.t - previous.t < 1e-6) return toValue(previous);
+  if (!next || next.t - previous.t < 1e-6 || isForcedSplit(next) !== isForcedSplit(previous)) return toValue(previous);
   const u = smoothstep(clamp((t - previous.t) / (next.t - previous.t), 0, 1));
+  if (isForcedSplit(previous)) {
+    return {
+      ...toValue(previous),
+      split: previous.split!.slice(0, 2).map((panel, index) => {
+        const target = next.split![index] ?? panel;
+        return {
+          x: panel.x + (target.x - panel.x) * u,
+          y: panel.y + (target.y - panel.y) * u,
+          zoom: panel.zoom + (target.zoom - panel.zoom) * u,
+        };
+      }),
+    };
+  }
+  if (next.mode !== previous.mode) return toValue(previous);
   return {
     mode: previous.mode,
     x: previous.x + (next.x - previous.x) * u,
@@ -167,4 +206,75 @@ export function applyFramingOverride(
   const sx = clamp(centerX - width / 2, 0, source.width - width);
   const sy = clamp(centerY - height / 2, 0, source.height - height);
   return { sx, sy, sw: width, sh: height };
+}
+
+// ---- Forced split screen ---------------------------------------------------------------------
+
+export interface SplitPanelLayout {
+  source: ClipperCropRect;
+  destination: { x: number; y: number; width: number; height: number };
+}
+
+function evenFloor(value: number): number {
+  return Math.max(2, Math.round(value / 2) * 2);
+}
+
+/** Where the two panels go: stacked on portrait/square outputs, side by side on landscape. */
+export function forcedSplitDestinations(output: FrameEffectSize): SplitPanelLayout["destination"][] {
+  if (output.width > output.height) {
+    const left = evenFloor(output.width / 2);
+    return [
+      { x: 0, y: 0, width: left, height: output.height },
+      { x: left, y: 0, width: output.width - left, height: output.height },
+    ];
+  }
+  const top = evenFloor(output.height / 2);
+  return [
+    { x: 0, y: 0, width: output.width, height: top },
+    { x: 0, y: top, width: output.width, height: output.height - top },
+  ];
+}
+
+/** Index of the panel under a point in output pixels. */
+export function splitPanelIndexAt(output: FrameEffectSize, x: number, y: number): number {
+  return output.width > output.height ? (x < output.width / 2 ? 0 : 1) : (y < output.height / 2 ? 0 : 1);
+}
+
+/** Crop for one panel: the panel's shape, centred on the panel's point, zoomed in from max size. */
+export function splitPanelCrop(
+  panel: ClipperSplitPanel,
+  destination: SplitPanelLayout["destination"],
+  source: FrameEffectSize,
+): ClipperCropRect {
+  const aspect = destination.width / Math.max(1, destination.height);
+  const natural = cropRectForCentroid(source.width, source.height, 0.5, 0.5, aspect);
+  const zoom = clamp(panel.zoom || 1, DEFAULT_FRAMING_ZOOM_RANGE.min, DEFAULT_FRAMING_ZOOM_RANGE.max);
+  const width = Math.min(natural.sw / zoom, source.width);
+  const height = Math.min(natural.sh / zoom, source.height);
+  const sx = clamp(clamp(panel.x, 0, 1) * source.width - width / 2, 0, source.width - width);
+  const sy = clamp(clamp(panel.y, 0, 1) * source.height - height / 2, 0, source.height - height);
+  return { sx, sy, sw: width, sh: height };
+}
+
+export function forcedSplitLayout(
+  panels: readonly ClipperSplitPanel[],
+  source: FrameEffectSize,
+  output: FrameEffectSize,
+): SplitPanelLayout[] {
+  return forcedSplitDestinations(output).map((destination, index) => ({
+    destination,
+    source: splitPanelCrop(panels[index] ?? panels[0]!, destination, source),
+  }));
+}
+
+/**
+ * Default panels: the left and right thirds of the frame, a little above centre. At zoom 1 a
+ * half-screen panel from a 16:9 source spans ~2/3 of its width (both people would show in both
+ * panels), so start zoomed to about a third of the width: one person per panel.
+ */
+export function defaultSplitPanels(): ClipperSplitPanel[] {
+  return [
+    { x: 0.3, y: 0.45, zoom: 2 },
+    { x: 0.7, y: 0.45, zoom: 2 },
+  ];
 }

@@ -10,6 +10,8 @@ import type { ClipperFormatResult } from "../shared/state.util";
 import type { ClipperFormatDef } from "../shared/formats.util";
 import {
   evaluateFramingTrack,
+  isForcedSplit,
+  splitPanelIndexAt,
   shotRangeAt,
   type ClipFramingTrack,
   type ClipperFramingValue,
@@ -50,8 +52,10 @@ import {
   createEditorTimeMap,
   dragFraming,
   drawEditorPreviewFrame,
+  dragSplitPanel,
   lockedFramingFromAi,
   previewCanvasSize,
+  splitPanelsFromAi,
 } from "./clip-editor-preview.util";
 import { ClipperEditorTimeline } from "./clipper-editor-timeline.component";
 import { ClipperEditorSidePanel } from "./clipper-editor-side-panel.component";
@@ -395,6 +399,18 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     [localNow, shotBoundaries, updateFraming],
   );
 
+  const forceSplit = useCallback(() => {
+    const video = videoRef.current;
+    if (!source || !video || !video.videoWidth) return;
+    const panels = splitPanelsFromAi(
+      source,
+      source.frameContext,
+      { width: video.videoWidth, height: video.videoHeight },
+      video.currentTime,
+    );
+    setFramingValue({ ...(framingValue ?? createDefaultFramingValue()), singleShot: false, split: panels }, false);
+  }, [framingValue, setFramingValue, source]);
+
   const lockFraming = useCallback(() => {
     const video = videoRef.current;
     if (!source || !video || !video.videoWidth) return;
@@ -436,6 +452,13 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       const scaleX = canvas.width / Math.max(1, rect.width);
       const scaleY = canvas.height / Math.max(1, rect.height);
       const startFraming = framingValue ?? createDefaultFramingValue();
+      const splitPanelIndex = isForcedSplit(startFraming)
+        ? splitPanelIndexAt(
+            { width: canvas.width, height: canvas.height },
+            (startX - rect.left) * scaleX,
+            (startY - rect.top) * scaleY,
+          )
+        : -1;
       const dragTime = localNow();
       let dragging = false;
       canvas.setPointerCapture(event.pointerId);
@@ -450,13 +473,15 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           if (current) pushHistory(current, false);
           dragging = true;
         }
-        const next = dragFraming(
-          startFraming,
-          dx * scaleX,
-          dy * scaleY,
-          { width: canvas.width, height: canvas.height },
-          { width: video.videoWidth, height: video.videoHeight },
-        );
+        const previewSize = { width: canvas.width, height: canvas.height };
+        const videoSize = { width: video.videoWidth, height: video.videoHeight };
+        const next =
+          splitPanelIndex >= 0
+            ? {
+                ...startFraming,
+                split: dragSplitPanel(startFraming.split!, splitPanelIndex, dx * scaleX, dy * scaleY, previewSize, videoSize),
+              }
+            : dragFraming(startFraming, dx * scaleX, dy * scaleY, previewSize, videoSize);
         updateFraming((track) => setFramingAt(track, shotBoundaries, dragTime, next), { record: false });
       };
       const onUp = () => {
@@ -891,6 +916,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 currentTime={currentTime}
                 onChange={(value) => setFramingValue(value)}
                 onLock={lockFraming}
+                onForceSplit={forceSplit}
+                sideBySide={outputWidth > outputHeight}
                 onAddKeyframe={addKeyframe}
                 onRemoveKeyframe={(id) => updateFraming((track) => removeFramingKeyframe(track, id))}
                 onSeek={(time) => {

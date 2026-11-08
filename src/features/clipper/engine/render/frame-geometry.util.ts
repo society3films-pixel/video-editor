@@ -12,7 +12,13 @@ import {
 import { resolveAutoFlipCropRender } from "./crop-resolvers.util";
 import { resolveFrameLayoutBranch } from "./frame-layout-branch.util";
 import { resolveClipperLayoutRender } from "./layout-resolvers.util";
-import { applyFramingOverride, evaluateClipFraming, type ClipFramingRender } from "./framing-override.util";
+import {
+  applyFramingOverride,
+  evaluateClipFraming,
+  forcedSplitLayout,
+  isForcedSplit,
+  type ClipFramingRender,
+} from "./framing-override.util";
 import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
 import type { ClipperClipSegmentWindow } from "../segmentation/segmentation.types";
 
@@ -88,6 +94,9 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
         render.segments?.length ? sourceTimeToLocalTime(render.segments, t) : Math.max(0, t),
       )
     : undefined;
+  if (isForcedSplit(override) && formatDef.mode === "crop") {
+    return { mode: "split", panels: forcedSplitLayout(override!.split!, source, output) };
+  }
   const plannedLayout = override?.singleShot && branch.plannedLayout?.mode === "split"
     ? { ...branch.plannedLayout, mode: "single-crop" as const, viewports: [branch.plannedLayout.viewports[0]!] }
     : branch.plannedLayout;

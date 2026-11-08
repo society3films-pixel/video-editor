@@ -304,7 +304,11 @@ export function setFramingAt(
   const atPlayhead = inShot.find((k) => Math.abs(k.t - t) <= KEYFRAME_SNAP_SEC);
   const target = atPlayhead ?? (inShot.length === 1 ? inShot[0] : undefined);
   if (target) {
-    return { ...track, keyframes: track.keyframes.map((k) => (k.id === target.id ? { ...k, ...value } : k)) };
+    // `split` is replaced, not merged, so leaving split screen really removes the panels.
+    return {
+      ...track,
+      keyframes: track.keyframes.map((k) => (k.id === target.id ? { ...k, ...value, split: value.split } : k)),
+    };
   }
   return { ...track, keyframes: sortKeyframes([...track.keyframes, { id: createEditId("kf"), t, ...value }]) };
 }
