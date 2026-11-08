@@ -19,7 +19,9 @@
 #>
 [CmdletBinding()]
 param(
-  [switch]$GpuSpeech
+  [switch]$GpuSpeech,
+  # Don't start the app when the build finishes (used by CI).
+  [switch]$NoLaunch
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,6 +53,9 @@ function Refresh-Path {
 }
 
 function Winget-Install([string]$Id, [string[]]$Extra = @()) {
+  if (-not (Has "winget")) {
+    throw "$Id is needed but winget is missing. Install 'App Installer' from the Microsoft Store (or install $Id yourself), then run this script again."
+  }
   Write-Host "Installing $Id ..."
   # winget returns non-zero for "already installed"; success is checked by the caller.
   & winget install --id $Id -e --accept-source-agreements --accept-package-agreements --silent @Extra | Out-Host
@@ -75,9 +80,6 @@ Write-Host "Open Clipper quick build in $ProjectRoot" -ForegroundColor Green
 
 if ($ProjectRoot.Path.Length -gt 60) {
   Write-Warning "The project path is long ($($ProjectRoot.Path.Length) characters). If the build fails with path errors, move the folder to something short like C:\dev\open-clipper."
-}
-if (-not (Has "winget")) {
-  throw "winget is missing. Install 'App Installer' from the Microsoft Store, then run this script again."
 }
 
 # ---- 1. Tools -------------------------------------------------------------------------------
@@ -220,5 +222,7 @@ if (-not (Test-Path $exe)) { throw "The build finished but $exe is missing." }
 Step "Done in $([int]((Get-Date) - $Started).TotalMinutes) minutes"
 Write-Host "Your app: $exe" -ForegroundColor Green
 Write-Host "Run it from that folder (it needs the DLLs and models beside it)."
-Write-Host "Starting it now..."
-Start-Process -FilePath $exe -WorkingDirectory $ReleaseDir
+if (-not $NoLaunch) {
+  Write-Host "Starting it now..."
+  Start-Process -FilePath $exe -WorkingDirectory $ReleaseDir
+}
