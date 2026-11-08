@@ -177,7 +177,10 @@ export function splitPanelsFromAi(
   });
 }
 
-/** Moves one split-screen panel by a drag of (dx, dy) preview pixels. */
+/**
+ * Moves one split-screen panel by a drag of (dx, dy) preview pixels. For an AI-tracked split
+ * the drag nudges the panel's framing relative to the tracked face instead.
+ */
 export function dragSplitPanel(
   panels: readonly ClipperSplitPanel[],
   index: number,
@@ -185,10 +188,19 @@ export function dragSplitPanel(
   dy: number,
   preview: FrameEffectSize,
   videoSize: FrameEffectSize,
+  follow = false,
 ): ClipperSplitPanel[] {
   const destination = forcedSplitDestinations(preview)[index];
   const panel = panels[index];
   if (!destination || !panel) return [...panels];
+  if (follow) {
+    const nudged = {
+      ...panel,
+      dx: Math.max(-0.5, Math.min(0.5, (panel.dx ?? 0) - dx / destination.width)),
+      dy: Math.max(-0.5, Math.min(0.5, (panel.dy ?? 0) - dy / destination.height)),
+    };
+    return panels.map((item, i) => (i === index ? nudged : item));
+  }
   const crop = splitPanelCrop(panel, destination, videoSize);
   const next = {
     ...panel,

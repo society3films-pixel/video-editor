@@ -20,6 +20,10 @@ export interface ClipperFramingValue {
    * outputs). When set, `mode`/`x`/`y`/`zoom`/`singleShot` are ignored.
    */
   split?: ClipperSplitPanel[];
+  /** Forced split: each panel follows a person (AI face tracking) instead of a fixed point. */
+  splitFollow?: boolean;
+  /** AI-tracked split: put the right-hand person in the first panel instead of the left. */
+  splitSwap?: boolean;
 }
 
 /** One panel of a forced split screen: a camera centred on `x`/`y` (0..1 of the source). */
@@ -28,6 +32,9 @@ export interface ClipperSplitPanel {
   y: number;
   /** 1 = the largest crop of the panel's shape that fits the source. */
   zoom: number;
+  /** AI-tracked split only: nudge from the tracked face, as fractions of the panel's crop. */
+  dx?: number;
+  dy?: number;
 }
 
 /** A framing value pinned to a clip-local time. */
@@ -116,7 +123,11 @@ function toValue(keyframe: ClipFramingKeyframe): ClipperFramingValue {
     zoom: keyframe.zoom,
     singleShot: keyframe.singleShot,
   };
-  if (isForcedSplit(keyframe)) value.split = keyframe.split!.map((panel) => ({ ...panel }));
+  if (isForcedSplit(keyframe)) {
+    value.split = keyframe.split!.map((panel) => ({ ...panel }));
+    if (keyframe.splitFollow) value.splitFollow = true;
+    if (keyframe.splitSwap) value.splitSwap = true;
+  }
   return value;
 }
 
@@ -144,7 +155,14 @@ export function evaluateFramingTrack(
   }
   if (!previous && !next) return undefined;
   if (!previous) return toValue(next!);
-  if (!next || next.t - previous.t < 1e-6 || isForcedSplit(next) !== isForcedSplit(previous)) return toValue(previous);
+  if (
+    !next ||
+    next.t - previous.t < 1e-6 ||
+    isForcedSplit(next) !== isForcedSplit(previous) ||
+    Boolean(next.splitFollow) !== Boolean(previous.splitFollow)
+  ) {
+    return toValue(previous);
+  }
   const u = smoothstep(clamp((t - previous.t) / (next.t - previous.t), 0, 1));
   if (isForcedSplit(previous)) {
     return {
@@ -155,6 +173,8 @@ export function evaluateFramingTrack(
           x: panel.x + (target.x - panel.x) * u,
           y: panel.y + (target.y - panel.y) * u,
           zoom: panel.zoom + (target.zoom - panel.zoom) * u,
+          dx: (panel.dx ?? 0) + ((target.dx ?? 0) - (panel.dx ?? 0)) * u,
+          dy: (panel.dy ?? 0) + ((target.dy ?? 0) - (panel.dy ?? 0)) * u,
         };
       }),
     };
@@ -256,15 +276,35 @@ export function splitPanelCrop(
   return { sx, sy, sw: width, sh: height };
 }
 
+/** Tracked face centre (0..1 of the source) for each panel; null = no tracking, use the panel's point. */
+export type SplitPanelFaces = Array<{ x: number; y: number } | null>;
+
+/** Share of the panel's crop height the face sits above centre (head-and-shoulders framing). */
+const TRACKED_FACE_HEADROOM = 0.12;
+
 export function forcedSplitLayout(
   panels: readonly ClipperSplitPanel[],
   source: FrameEffectSize,
   output: FrameEffectSize,
+  faces?: SplitPanelFaces,
 ): SplitPanelLayout[] {
-  return forcedSplitDestinations(output).map((destination, index) => ({
-    destination,
-    source: splitPanelCrop(panels[index] ?? panels[0]!, destination, source),
-  }));
+  return forcedSplitDestinations(output).map((destination, index) => {
+    const panel = panels[index] ?? panels[0]!;
+    const face = faces?.[index];
+    if (!face) return { destination, source: splitPanelCrop(panel, destination, source) };
+    // Size the crop as usual, then centre it on the tracked face plus the user's nudge.
+    const size = splitPanelCrop({ ...panel, x: 0.5, y: 0.5 }, destination, source);
+    const centerX = face.x * source.width + (panel.dx ?? 0) * size.sw;
+    const centerY = face.y * source.height + (TRACKED_FACE_HEADROOM + (panel.dy ?? 0)) * size.sh;
+    return {
+      destination,
+      source: {
+        ...size,
+        sx: clamp(centerX - size.sw / 2, 0, source.width - size.sw),
+        sy: clamp(centerY - size.sh / 2, 0, source.height - size.sh),
+      },
+    };
+  });
 }
 
 /**

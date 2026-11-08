@@ -20,6 +20,8 @@ import {
   type ClipFramingRender,
 } from "./framing-override.util";
 import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
+import type { FaceSampleCache } from "../reframe/cache.util";
+import { splitFaceTracksFor, trackedPositionAt } from "./split-tracking.util";
 import type { ClipperClipSegmentWindow } from "../segmentation/segmentation.types";
 
 export interface ClipperFramePanelGeometry {
@@ -84,7 +86,7 @@ function splitDestinations(count: number, output: FrameEffectSize): ClipperFrame
 }
 
 /** Exact crop/panel geometry consumed by the canvas renderer, without captions. */
-export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[]; segments?: ClipperClipSegmentWindow[]; framing?: ClipFramingRender }): ClipperFrameGeometry {
+export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[]; segments?: ClipperClipSegmentWindow[]; framing?: ClipFramingRender; faceCache?: FaceSampleCache | null }): ClipperFrameGeometry {
   const resolved = formatDef.mode === "crop" ? resolveClipperLayoutRender(render.smartCropAnalysis, formatDef.id, source, t) : undefined;
   const regions = formatDef.mode === "crop" ? cachedLayoutRegions(render.smartCropAnalysis) : [];
   const branch = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
@@ -95,7 +97,14 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
       )
     : undefined;
   if (isForcedSplit(override) && formatDef.mode === "crop") {
-    return { mode: "split", panels: forcedSplitLayout(override!.split!, source, output) };
+    let faces: Array<{ x: number; y: number } | null> | undefined;
+    if (override!.splitFollow && render.faceCache) {
+      const tracks = splitFaceTracksFor(render.faceCache);
+      const left = trackedPositionAt(tracks.left, t);
+      const right = trackedPositionAt(tracks.right, t);
+      faces = override!.splitSwap ? [right, left] : [left, right];
+    }
+    return { mode: "split", panels: forcedSplitLayout(override!.split!, source, output, faces) };
   }
   const plannedLayout = override?.singleShot && branch.plannedLayout?.mode === "split"
     ? { ...branch.plannedLayout, mode: "single-crop" as const, viewports: [branch.plannedLayout.viewports[0]!] }

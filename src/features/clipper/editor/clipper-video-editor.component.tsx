@@ -8,6 +8,7 @@ import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import type { ClipperFormatResult } from "../shared/state.util";
 import type { ClipperFormatDef } from "../shared/formats.util";
+import { splitFaceTracksFor, trackedPositionAt } from "../engine/render/split-tracking.util";
 import {
   evaluateFramingTrack,
   isForcedSplit,
@@ -185,6 +186,13 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   const framingValue = edit?.framing ? evaluateFramingTrack(edit.framing, shotBoundaries, currentTime) : undefined;
   const keyframeAtPlayhead = shotKeyframes.find((k) => Math.abs(k.t - currentTime) <= KEYFRAME_SNAP_SEC);
   const userShotStart = Boolean(edit?.framing?.extraShotBoundaries.some((b) => Math.abs(b - shot.start) <= 0.05));
+  const faceCache = source?.frameContext.faceCache ?? null;
+  const splitTrackedHere = useMemo(() => {
+    if (!faceCache || !source) return false;
+    const tracks = splitFaceTracksFor(faceCache);
+    const videoTime = createEditorTimeMap(source, duration).toVideo(currentTime);
+    return Boolean(trackedPositionAt(tracks.left, videoTime) && trackedPositionAt(tracks.right, videoTime));
+  }, [currentTime, duration, faceCache, source]);
 
   // ---- Edit + history -------------------------------------------------------------------------
 
@@ -408,7 +416,11 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       { width: video.videoWidth, height: video.videoHeight },
       video.currentTime,
     );
-    setFramingValue({ ...(framingValue ?? createDefaultFramingValue()), singleShot: false, split: panels }, false);
+    // Start AI-tracked: each panel follows one person; the panels above are the fallback.
+    setFramingValue(
+      { ...(framingValue ?? createDefaultFramingValue()), singleShot: false, split: panels, splitFollow: true, splitSwap: false },
+      false,
+    );
   }, [framingValue, setFramingValue, source]);
 
   const lockFraming = useCallback(() => {
@@ -479,7 +491,15 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           splitPanelIndex >= 0
             ? {
                 ...startFraming,
-                split: dragSplitPanel(startFraming.split!, splitPanelIndex, dx * scaleX, dy * scaleY, previewSize, videoSize),
+                split: dragSplitPanel(
+                  startFraming.split!,
+                  splitPanelIndex,
+                  dx * scaleX,
+                  dy * scaleY,
+                  previewSize,
+                  videoSize,
+                  Boolean(startFraming.splitFollow),
+                ),
               }
             : dragFraming(startFraming, dx * scaleX, dy * scaleY, previewSize, videoSize);
         updateFraming((track) => setFramingAt(track, shotBoundaries, dragTime, next), { record: false });
@@ -918,6 +938,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onLock={lockFraming}
                 onForceSplit={forceSplit}
                 sideBySide={outputWidth > outputHeight}
+                splitTrackedHere={splitTrackedHere}
                 onAddKeyframe={addKeyframe}
                 onRemoveKeyframe={(id) => updateFraming((track) => removeFramingKeyframe(track, id))}
                 onSeek={(time) => {

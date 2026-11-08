@@ -307,7 +307,11 @@ export function setFramingAt(
     // `split` is replaced, not merged, so leaving split screen really removes the panels.
     return {
       ...track,
-      keyframes: track.keyframes.map((k) => (k.id === target.id ? { ...k, ...value, split: value.split } : k)),
+      keyframes: track.keyframes.map((k) =>
+        k.id === target.id
+          ? { ...k, ...value, split: value.split, splitFollow: value.splitFollow, splitSwap: value.splitSwap }
+          : k,
+      ),
     };
   }
   return { ...track, keyframes: sortKeyframes([...track.keyframes, { id: createEditId("kf"), t, ...value }]) };

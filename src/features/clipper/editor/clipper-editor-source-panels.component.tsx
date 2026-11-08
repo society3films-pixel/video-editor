@@ -152,6 +152,8 @@ interface FramingPanelProps {
   onForceSplit: () => void;
   /** Landscape outputs put split panels side by side instead of stacked. */
   sideBySide: boolean;
+  /** AI-tracked split: whether two people are tracked at the playhead. */
+  splitTrackedHere: boolean;
   onAddKeyframe: () => void;
   onRemoveKeyframe: (id: string) => void;
   onSeek: (localTime: number) => void;
@@ -174,6 +176,7 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
   onLock,
   onForceSplit,
   sideBySide,
+  splitTrackedHere,
   onAddKeyframe,
   onRemoveKeyframe,
   onSeek,
@@ -233,25 +236,62 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
 
         {split ? (
           <>
-            <Text fontSize="xs" color={theme.text.muted}>
-              Drag inside a panel to reposition it. Changes apply to this shot only.
+            <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
+              Panels
+            </Text>
+            <HStack gap={2}>
+              <ChoiceButton
+                selected={Boolean(current.splitFollow)}
+                onClick={() => !current.splitFollow && update({ splitFollow: true })}
+                title="Each panel follows one person (AI face tracking)"
+              >
+                <Sparkles size={13} /> AI follows people
+              </ChoiceButton>
+              <ChoiceButton
+                selected={!current.splitFollow}
+                onClick={() => current.splitFollow && update({ splitFollow: false })}
+                title="Each panel stays where you put it"
+              >
+                <Crosshair size={13} /> Manual
+              </ChoiceButton>
+            </HStack>
+            <Text fontSize="xs" color={current.splitFollow && !splitTrackedHere ? theme.status.danger : theme.text.muted}>
+              {current.splitFollow
+                ? splitTrackedHere
+                  ? `The AI keeps the ${sideBySide ? "left" : "top"} panel on one person and the other panel on the second. Drag inside a panel to nudge its framing.`
+                  : "Two people aren't detected at this moment, so the panels use their manual positions here."
+                : "Drag inside a panel to reposition it. Changes apply to this shot only."}
             </Text>
             {current.split!.slice(0, 2).map((panel, index) => (
               <VStack key={index} align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
                 <Text fontSize="xs" fontWeight="semibold">
                   {panelNames[index]}
+                  {current.splitFollow ? ` · ${(index === 0) !== Boolean(current.splitSwap) ? "left" : "right"} person` : ""}
                 </Text>
                 <SliderRow label="Zoom" value={panel.zoom} min={1} max={3} step={0.05} display={`${Math.round(panel.zoom * 100)}%`} onChange={(zoom) => updatePanel(index, { zoom })} />
-                <SliderRow label="Horizontal" value={panel.x} min={0} max={1} step={0.005} display={`${Math.round(panel.x * 100)}%`} onChange={(x) => updatePanel(index, { x })} />
-                <SliderRow label="Vertical" value={panel.y} min={0} max={1} step={0.005} display={`${Math.round(panel.y * 100)}%`} onChange={(y) => updatePanel(index, { y })} />
+                {current.splitFollow ? (
+                  <>
+                    <SliderRow label="Nudge left / right" value={panel.dx ?? 0} min={-0.5} max={0.5} step={0.01} display={`${Math.round((panel.dx ?? 0) * 100)}`} onChange={(dx) => updatePanel(index, { dx })} />
+                    <SliderRow label="Nudge up / down" value={panel.dy ?? 0} min={-0.5} max={0.5} step={0.01} display={`${Math.round((panel.dy ?? 0) * 100)}`} onChange={(dy) => updatePanel(index, { dy })} />
+                  </>
+                ) : (
+                  <>
+                    <SliderRow label="Horizontal" value={panel.x} min={0} max={1} step={0.005} display={`${Math.round(panel.x * 100)}%`} onChange={(x) => updatePanel(index, { x })} />
+                    <SliderRow label="Vertical" value={panel.y} min={0} max={1} step={0.005} display={`${Math.round(panel.y * 100)}%`} onChange={(y) => updatePanel(index, { y })} />
+                  </>
+                )}
               </VStack>
             ))}
             <OutlinedActionButton
               {...smallButton}
               startIcon={<ArrowUpDown size={13} />}
-              onClick={() => update({ split: [current.split![1]!, current.split![0]!] })}
+              onClick={() =>
+                current.splitFollow
+                  ? update({ splitSwap: !current.splitSwap })
+                  : update({ split: [current.split![1]!, current.split![0]!] })
+              }
             >
-              Swap panels
+              {current.splitFollow ? "Swap people" : "Swap panels"}
             </OutlinedActionButton>
           </>
         ) : (
@@ -351,7 +391,9 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
                     <Text fontSize="xs" fontFamily="mono">{formatEditorTime(keyframe.t)}</Text>
                     <Text fontSize="xs" color={theme.text.muted}>
                       {isForcedSplit(keyframe)
-                        ? "Split screen"
+                        ? keyframe.splitFollow
+                          ? "Split · AI follows"
+                          : "Split · manual"
                         : `${keyframe.mode === "fixed" ? "Manual" : "Follow AI"} · ${Math.round(keyframe.zoom * 100)}%`}
                     </Text>
                   </Box>
