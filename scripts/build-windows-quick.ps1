@@ -215,7 +215,16 @@ if (-not (Test-Path (Join-Path $ProjectRoot ".env"))) {
 }
 
 Step "Building open-clipper.exe (first time: about 10-25 minutes)"
-Invoke-Checked "The app build" { npm run tauri:build:fast }
+# Same settings as `npm run tauri:build:fast`, but with an absolute CARGO_TARGET_DIR: the
+# sherpa-onnx CPU prebuild download resolves a relative target dir from its own crate folder,
+# so the linker could not find sherpa-onnx-c-api.lib.
+$env:CARGO_TARGET_DIR = Join-Path $ProjectRoot "src-tauri\target-fast"
+$env:CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "256"
+$env:CARGO_PROFILE_RELEASE_LTO = "off"
+$env:CARGO_PROFILE_RELEASE_INCREMENTAL = "true"
+$env:CARGO_PROFILE_RELEASE_OPT_LEVEL = "2"
+$env:CARGO_PROFILE_RELEASE_STRIP = "none"
+Invoke-Checked "The app build" { node (Join-Path $ProjectRoot "scripts\run-tauri.mjs") build --no-bundle }
 
 # Make sure every runtime DLL sits next to the exe.
 Copy-Item (Join-Path $WinRuntimeDir "*.dll") $ReleaseDir -Force
