@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { Box, Flex, HStack, Text, VStack } from "@chakra-ui/react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Clapperboard } from "lucide-react";
+import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
+import { ClipperVideoEditor } from "../editor/clipper-video-editor.component";
 import {
   CLIPPER_FORMAT_DEFS,
   getBadgePlatformsForFormat,
@@ -24,6 +26,8 @@ const ACTIONS_COLUMN_WIDTH = 180;
 interface ClipperExportFormatRowProps {
   result: ClipperFormatResult;
   projectId: string;
+  /** Called after an edited copy of this export is saved. */
+  onEdited?: () => void;
 }
 
 function formatExportedAt(exportedAt: string): string {
@@ -35,8 +39,10 @@ function formatExportedAt(exportedAt: string): string {
 export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
   result,
   projectId,
+  onEdited,
 }) => {
   const { theme } = useClipperUi();
+  const [editorOpen, setEditorOpen] = useState(false);
   const frame = getClipperCardFrameSize(result.formatId, THUMB_HEIGHT);
   const isMissing = result.isMissing === true;
   const exportedAtLabel = formatExportedAt(result.exportedAt);
@@ -152,12 +158,30 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
         w={{ base: "full", lg: `${ACTIONS_COLUMN_WIDTH}px` }}
         minW={{ lg: `${ACTIONS_COLUMN_WIDTH}px` }}
       >
+        <OutlinedActionButton
+          width="100%"
+          justifyContent="center"
+          whiteSpace="nowrap"
+          startIcon={<Clapperboard size={16} />}
+          onClick={() => setEditorOpen(true)}
+          disabled={isMissing || result.registrationPending === true}
+        >
+          Edit video
+        </OutlinedActionButton>
         <ClipperExportRevealButton
           projectId={projectId}
           fileName={resolveClipperExportFileName(result)}
           disabled={isMissing}
         />
       </VStack>
+      {editorOpen ? (
+        <ClipperVideoEditor
+          result={result}
+          projectId={projectId}
+          onClose={() => setEditorOpen(false)}
+          onSaved={() => onEdited?.()}
+        />
+      ) : null}
     </HStack>
   );
 };

@@ -60,6 +60,12 @@ Queue clips across formats and track render progress. Connect your channels to p
 
 [render-queue.webm](https://github.com/user-attachments/assets/068b656b-4654-463c-b67d-78f7fc628900)
 
+### Built-in clip editor
+
+Every finished export (already captioned and reframed) has an **Edit video** button in Exports. The editor lets you trim and split the clip into parts, delete the parts you don't want, change the volume or mute it, add fade in/out, and place text overlays. **Save as new export** renders the result next to the original, which stays unchanged, and copies its social metadata so it is ready to publish.
+
+Shortcuts: `Space` play/pause, `S` split at playhead, `Delete` remove selected part, `Ctrl+Z` undo, `←`/`→` step a frame (`Shift` for 1 second).
+
 ### Open the full video editor from Clipper
 
 Get complete control, frame-level precision, and the freedom to make any fix or polish you want. Jump from Open Clipper into GrepCut Studio, the full online video editor.

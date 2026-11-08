@@ -47,7 +47,11 @@ export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
         onGoToPublish={handleGoToPublish}
       />
 
-      <ClipperExportHistoryList exports={exportHistory} projectId={projectId} />
+      <ClipperExportHistoryList
+        exports={exportHistory}
+        projectId={projectId}
+        onExportEdited={onRefreshHistory}
+      />
     </VStack>
   );
 };
