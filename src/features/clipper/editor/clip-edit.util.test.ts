@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   captionGroupText,
   clipEditNeedsPostProcess,
-  clipEditNeedsSourceRender,
-  createDefaultSegmentFraming,
-  framingOverridesFromEdit,
+  clipEditChangesCaptions,
+  createDefaultFramingValue,
+  setFramingAt,
+  addFramingKeyframe,
+  applyFramingToAllShots,
+  resetShotFraming,
+  splitClipEditAtShots,
   setCaptionGroupText,
   createInitialClipEdit,
   createTextOverlay,
@@ -103,14 +107,48 @@ describe("caption and framing edits", () => {
     expect(setCaptionGroupText(groups, 1, "   ")).toHaveLength(1);
   });
 
-  it("flags source re-render and carries framing across splits", () => {
+  it("flags caption changes and post-processing separately", () => {
     const base = createInitialClipEdit(10);
-    expect(clipEditNeedsSourceRender(base)).toBe(false);
-    const framed = { ...base, segments: [{ ...base.segments[0], framing: createDefaultSegmentFraming() }] };
-    expect(clipEditNeedsSourceRender(framed)).toBe(true);
-    expect(clipEditNeedsPostProcess(framed, 10)).toBe(false);
-    const split = splitClipEditAt(framed, 4);
-    expect(framingOverridesFromEdit(split).map((o) => [o.start, o.end])).toEqual([[0, 4], [4, 10]]);
+    expect(clipEditChangesCaptions(base)).toBe(false);
+    expect(clipEditChangesCaptions({ ...base, captionsVisible: false })).toBe(true);
+    expect(clipEditNeedsPostProcess(base, 10)).toBe(false);
+    expect(clipEditNeedsPostProcess(splitClipEditAt(base, 4), 10)).toBe(true);
     expect(isClipEditUnchanged({ ...base, captionsVisible: false }, 10)).toBe(false);
+  });
+});
+
+describe("framing keyframe editing", () => {
+  const empty = { keyframes: [], extraShotBoundaries: [] };
+  const boundaries = [5];
+  const zoomed = { ...createDefaultFramingValue(), zoom: 2 };
+
+  it("keeps one static keyframe per shot until you add another", () => {
+    let track = setFramingAt(empty, boundaries, 1, zoomed);
+    expect(track.keyframes).toHaveLength(1);
+    track = setFramingAt(track, boundaries, 3, { ...zoomed, zoom: 1.5 });
+    expect(track.keyframes).toHaveLength(1);
+    expect(track.keyframes[0].zoom).toBe(1.5);
+    track = setFramingAt(track, boundaries, 7, zoomed);
+    expect(track.keyframes).toHaveLength(2);
+  });
+
+  it("animates once a second keyframe is added", () => {
+    let track = setFramingAt(empty, boundaries, 1, zoomed);
+    track = addFramingKeyframe(track, 4, zoomed);
+    track = setFramingAt(track, boundaries, 4, { ...zoomed, x: 0.5 });
+    expect(track.keyframes.map((k) => [k.t, k.x])).toEqual([[1, 0], [4, 0.5]]);
+  });
+
+  it("resets a shot and applies one framing to every shot", () => {
+    let track = setFramingAt(empty, boundaries, 1, zoomed);
+    track = setFramingAt(track, boundaries, 7, zoomed);
+    expect(resetShotFraming(track, boundaries, 2).keyframes.map((k) => k.t)).toEqual([7]);
+    const all = applyFramingToAllShots(empty, [5, 8], 10, zoomed);
+    expect(all.keyframes.map((k) => k.t)).toEqual([2.5, 6.5, 9]);
+  });
+
+  it("splits parts at shot changes", () => {
+    const split = splitClipEditAtShots(createInitialClipEdit(10), [3, 7]);
+    expect(split.segments.map((s) => [s.start, s.end])).toEqual([[0, 3], [3, 7], [7, 10]]);
   });
 });

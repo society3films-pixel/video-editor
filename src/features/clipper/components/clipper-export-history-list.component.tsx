@@ -1,21 +1,21 @@
 import React from "react";
 import { VStack } from "@chakra-ui/react";
 import type { ClipperFormatResult } from "../shared/state.util";
-import type { ClipEditorSource } from "../editor/clip-editor-source.util";
+import type { ClipEditorBridge } from "../editor/clip-editor-source.util";
 import { ClipperExportFormatRow } from "./clipper-export-format-row.component";
 
 interface ClipperExportHistoryListProps {
   exports: ClipperFormatResult[];
   projectId: string;
   onExportEdited?: () => void;
-  getClipEditorSource?: (result: ClipperFormatResult) => ClipEditorSource | null;
+  editorBridge?: ClipEditorBridge;
 }
 
 export const ClipperExportHistoryList: React.FC<ClipperExportHistoryListProps> = ({
   exports,
   projectId,
   onExportEdited,
-  getClipEditorSource,
+  editorBridge,
 }) => {
   return (
     <VStack align="stretch" gap={2}>
@@ -25,7 +25,8 @@ export const ClipperExportHistoryList: React.FC<ClipperExportHistoryListProps> =
           result={result}
           projectId={projectId}
           onEdited={onExportEdited}
-          getClipEditorSource={getClipEditorSource}
+          editorBridge={editorBridge}
+          allExports={exports}
         />
       ))}
     </VStack>

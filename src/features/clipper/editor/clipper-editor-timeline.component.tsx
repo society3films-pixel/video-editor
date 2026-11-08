@@ -14,6 +14,12 @@ interface ClipperEditorTimelineProps {
   /** Called once when an edge drag starts, so the caller can snapshot undo history. */
   onTrimStart: () => void;
   onTrim: (segmentId: string, edge: "start" | "end", sourceTime: number) => void;
+  /** Shot changes (dashed lines). */
+  shotBoundaries?: number[];
+  /** Framing keyframes (diamonds in a lane under the track). */
+  keyframes?: Array<{ id: string; t: number }>;
+  /** False hides the part blocks' trim handles (framing-only editing). */
+  editableParts?: boolean;
 }
 
 const HANDLE_WIDTH = 10;
@@ -32,6 +38,9 @@ export const ClipperEditorTimeline: React.FC<ClipperEditorTimelineProps> = ({
   onSelectSegment,
   onTrimStart,
   onTrim,
+  shotBoundaries = [],
+  keyframes = [],
+  editableParts = true,
 }) => {
   const { theme } = useClipperUi();
   const trackRef = useRef<HTMLDivElement>(null);
@@ -161,9 +170,9 @@ export const ClipperEditorTimeline: React.FC<ClipperEditorTimelineProps> = ({
                 overflow="hidden"
                 maxW="calc(100% - 28px)"
               >
-                Part {index + 1} · {formatEditorTime(segment.end - segment.start)}
+                {editableParts ? `Part ${index + 1} · ${formatEditorTime(segment.end - segment.start)}` : ""}
               </Text>
-              {(["start", "end"] as const).map((edge) => (
+              {(editableParts ? (["start", "end"] as const) : []).map((edge) => (
                 <Flex
                   key={edge}
                   position="absolute"
@@ -185,6 +194,21 @@ export const ClipperEditorTimeline: React.FC<ClipperEditorTimelineProps> = ({
           );
         })}
 
+        {shotBoundaries.map((t) => (
+          <Box
+            key={`shot-${t}`}
+            position="absolute"
+            top={0}
+            bottom={0}
+            left={`${pct(t)}%`}
+            w="0"
+            borderLeft="2px dashed"
+            borderColor="whiteAlpha.700"
+            pointerEvents="none"
+            title="Shot change"
+          />
+        ))}
+
         <Box
           position="absolute"
           top="-6px"
@@ -199,6 +223,30 @@ export const ClipperEditorTimeline: React.FC<ClipperEditorTimelineProps> = ({
           <Box position="absolute" top="-2px" left="-5px" w="12px" h="12px" bg="white" borderRadius="full" />
         </Box>
       </Box>
+
+      {keyframes.length > 0 || shotBoundaries.length > 0 ? (
+        <Box position="relative" h="18px" mt={1}>
+          {keyframes.map((keyframe) => (
+            <Box
+              key={keyframe.id}
+              as="button"
+              position="absolute"
+              left={`${pct(keyframe.t)}%`}
+              top="3px"
+              w="11px"
+              h="11px"
+              ml="-5.5px"
+              transform="rotate(45deg)"
+              bg={clipperTheme.accentGlow}
+              border="1px solid white"
+              cursor="pointer"
+              title={`Framing keyframe at ${formatEditorTime(keyframe.t)}`}
+              aria-label={`Framing keyframe at ${formatEditorTime(keyframe.t)}`}
+              onClick={() => onSeek(keyframe.t)}
+            />
+          ))}
+        </Box>
+      ) : null}
     </Box>
   );
 };

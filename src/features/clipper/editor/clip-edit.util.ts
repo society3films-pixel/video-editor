@@ -6,22 +6,26 @@
  * - `segments` are kept ranges in **source** time (seconds into the exported clip), sorted and
  *   non-overlapping. Anything outside them is cut from the output.
  * - Text overlays and fades are in **output** time (seconds into the edited result).
- * - Caption edits and per-part framing are in source time too. They need the project's source
+ * - Caption edits and framing keyframes are in source time too. They need the project's source
  *   video and are applied by re-rendering the clip from it (see save-edited-export.util).
+ *   Framing belongs to the clip (saved on the project, used by every format); the editor holds a
+ *   draft of it in `framing`.
  */
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
-import type { ClipperFramingOverride } from "../engine/render/framing-override.util";
+import {
+  mergeShotBoundaries,
+  shotIndexAt,
+  type ClipFramingKeyframe,
+  type ClipFramingTrack,
+  type ClipperFramingValue,
+} from "../engine/render/framing-override.util";
 
 export const MIN_SEGMENT_SEC = 0.1;
-
-export type ClipSegmentFraming = Omit<ClipperFramingOverride, "start" | "end">;
 
 export interface ClipEditSegment {
   id: string;
   start: number;
   end: number;
-  /** Manual framing for this part; absent = AI framing. */
-  framing?: ClipSegmentFraming;
 }
 
 export type ClipTextPosition = "top" | "middle" | "bottom";
@@ -50,6 +54,8 @@ export interface ClipEdit {
   captionGroups: CaptionGroup[] | null;
   /** Show/hide burned-in captions; null = follow project settings. */
   captionsVisible: boolean | null;
+  /** Draft of the clip's framing track; null when the source video isn't available. */
+  framing: ClipFramingTrack | null;
 }
 
 let idCounter = 0;
@@ -71,6 +77,7 @@ export function createInitialClipEdit(durationSec: number): ClipEdit {
     textOverlays: [],
     captionGroups: null,
     captionsVisible: null,
+    framing: null,
   };
 }
 
@@ -214,13 +221,13 @@ export function getFadeFactor(edit: Pick<ClipEdit, "fadeInSec" | "fadeOutSec">, 
   return factor;
 }
 
-/** True when the edit changes captions or framing, which requires re-rendering from the source. */
-export function clipEditNeedsSourceRender(edit: ClipEdit): boolean {
-  return (
-    edit.captionGroups !== null ||
-    edit.captionsVisible !== null ||
-    edit.segments.some((segment) => segment.framing !== undefined)
-  );
+/** True when the edit changes the captions, which requires re-rendering from the source. */
+export function clipEditChangesCaptions(edit: ClipEdit): boolean {
+  return edit.captionGroups !== null || edit.captionsVisible !== null;
+}
+
+export function framingTracksEqual(a: ClipFramingTrack | null, b: ClipFramingTrack | null): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 /** True when cuts, audio, fades or text change the video after it is rendered. */
@@ -237,15 +244,9 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
   );
 }
 
-/** Framing overrides for the renderer, one per kept part with manual framing. */
-export function framingOverridesFromEdit(edit: ClipEdit): ClipperFramingOverride[] {
-  return edit.segments.flatMap((segment) =>
-    segment.framing ? [{ ...segment.framing, start: segment.start, end: segment.end }] : [],
-  );
-}
-
+/** True when nothing differs from `baseline` (captions, cuts, audio, fades, text). Framing is compared separately. */
 export function isClipEditUnchanged(edit: ClipEdit, sourceDuration: number): boolean {
-  if (clipEditNeedsSourceRender(edit)) return false;
+  if (clipEditChangesCaptions(edit)) return false;
   const [only] = edit.segments;
   return (
     edit.segments.length === 1 &&
@@ -265,8 +266,93 @@ export function formatEditorTime(seconds: number): string {
   return `${minutes}:${rest.toFixed(1).padStart(4, "0")}`;
 }
 
-export function createDefaultSegmentFraming(): ClipSegmentFraming {
+export function createDefaultFramingValue(): ClipperFramingValue {
   return { mode: "auto", x: 0, y: 0, zoom: 1, singleShot: false };
+}
+
+// ---- Framing keyframe editing ------------------------------------------------------------------
+
+/** Keyframes within this distance of the playhead count as "at" the playhead. */
+export const KEYFRAME_SNAP_SEC = 0.08;
+
+export function framingShotBoundaries(track: ClipFramingTrack, aiShotBoundaries: readonly number[]): number[] {
+  return mergeShotBoundaries(aiShotBoundaries, track.extraShotBoundaries);
+}
+
+export function keyframesInShot(track: ClipFramingTrack, boundaries: readonly number[], t: number): ClipFramingKeyframe[] {
+  const shot = shotIndexAt(boundaries, t);
+  return track.keyframes.filter((k) => shotIndexAt(boundaries, k.t) === shot).sort((a, b) => a.t - b.t);
+}
+
+function sortKeyframes(keyframes: ClipFramingKeyframe[]): ClipFramingKeyframe[] {
+  return [...keyframes].sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Changes the framing at the playhead. A keyframe at the playhead is updated. A shot with no
+ * keyframes gets one (which then frames the whole shot); a shot with a single keyframe has
+ * that keyframe updated, so simple "fix this shot" edits stay static. Only shots that already
+ * animate (2+ keyframes) get a new keyframe at the playhead.
+ */
+export function setFramingAt(
+  track: ClipFramingTrack,
+  boundaries: readonly number[],
+  t: number,
+  value: ClipperFramingValue,
+): ClipFramingTrack {
+  const inShot = keyframesInShot(track, boundaries, t);
+  const atPlayhead = inShot.find((k) => Math.abs(k.t - t) <= KEYFRAME_SNAP_SEC);
+  const target = atPlayhead ?? (inShot.length === 1 ? inShot[0] : undefined);
+  if (target) {
+    return { ...track, keyframes: track.keyframes.map((k) => (k.id === target.id ? { ...k, ...value } : k)) };
+  }
+  return { ...track, keyframes: sortKeyframes([...track.keyframes, { id: createEditId("kf"), t, ...value }]) };
+}
+
+/** Adds a keyframe at the playhead holding the current framing, so the next change animates. */
+export function addFramingKeyframe(track: ClipFramingTrack, t: number, value: ClipperFramingValue): ClipFramingTrack {
+  if (track.keyframes.some((k) => Math.abs(k.t - t) <= KEYFRAME_SNAP_SEC)) return track;
+  return { ...track, keyframes: sortKeyframes([...track.keyframes, { id: createEditId("kf"), t, ...value }]) };
+}
+
+export function removeFramingKeyframe(track: ClipFramingTrack, id: string): ClipFramingTrack {
+  return { ...track, keyframes: track.keyframes.filter((k) => k.id !== id) };
+}
+
+/** Removes every keyframe in the shot at `t`, returning it to AI framing. */
+export function resetShotFraming(track: ClipFramingTrack, boundaries: readonly number[], t: number): ClipFramingTrack {
+  const ids = new Set(keyframesInShot(track, boundaries, t).map((k) => k.id));
+  return { ...track, keyframes: track.keyframes.filter((k) => !ids.has(k.id)) };
+}
+
+/** One static keyframe per shot with `value`, replacing all existing framing. */
+export function applyFramingToAllShots(
+  track: ClipFramingTrack,
+  boundaries: readonly number[],
+  duration: number,
+  value: ClipperFramingValue,
+): ClipFramingTrack {
+  const starts = [0, ...boundaries.filter((b) => b < duration)];
+  return {
+    ...track,
+    keyframes: starts.map((start, index) => {
+      const end = index + 1 < starts.length ? starts[index + 1]! : duration;
+      return { id: createEditId("kf"), t: (start + end) / 2, ...value };
+    }),
+  };
+}
+
+export function addShotBoundary(track: ClipFramingTrack, t: number): ClipFramingTrack {
+  return { ...track, extraShotBoundaries: mergeShotBoundaries(track.extraShotBoundaries, [t]) };
+}
+
+export function removeShotBoundary(track: ClipFramingTrack, t: number): ClipFramingTrack {
+  return { ...track, extraShotBoundaries: track.extraShotBoundaries.filter((b) => Math.abs(b - t) > 0.05) };
+}
+
+/** Splits the edit's parts at every shot change. */
+export function splitClipEditAtShots(edit: ClipEdit, boundaries: readonly number[]): ClipEdit {
+  return boundaries.reduce((current, t) => splitClipEditAt(current, t), edit);
 }
 
 export function captionGroupText(group: CaptionGroup): string {

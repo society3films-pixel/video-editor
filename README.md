@@ -64,7 +64,11 @@ Queue clips across formats and track render progress. Connect your channels to p
 
 Every finished export has an **Edit video** button in Exports. The editor lets you trim and split the clip into parts, delete the parts you don't want, change the volume or mute it, add fade in/out, and place text overlays.
 
-The **Captions** tab lets you fix caption wording line by line, remove lines, or hide captions. The **Framing** tab lets you nudge and zoom the AI camera, or lock it in place, per part (drag the preview to reposition), and turn off split screen. Captions and framing are burned into the exported file, so these changes re-render the clip from the project's source video; they are available while the project's video is loaded and the clip's start and end match the export. **Save as new export** renders the result next to the original, which stays unchanged, and copies its social metadata so it is ready to publish.
+The **Captions** tab lets you fix caption wording line by line, remove lines, or hide captions. Edited exports remember their edit: opening one again continues from your cuts, text and caption fixes.
+
+**Fixing framing.** Use **Fix framing** in Preview (before rendering) or the editor's **Framing** tab. Framing is saved to the clip, so Preview, the render queue, every format and every re-render use it, and exports made before the change show as needing a re-render. It works shot by shot: shots come from the AI's scene cuts (you can add a shot change it missed), and a shot you don't touch keeps the AI framing. In a shot you can follow the AI camera with a nudge and zoom, or place the camera manually (drag the preview), and turn off split screen. Add keyframes to make the camera glide between positions within a shot. In the editor, **Split at shot changes** splits the clip into parts at every shot change.
+
+Captions and framing are burned into exported files, so these changes re-render the clip from the project's source video; they are available while the project's video is loaded and the clip's start and end match the export.
 
 Shortcuts: `Space` play/pause, `S` split at playhead, `Delete` remove selected part, `Ctrl+Z` undo, `←`/`→` step a frame (`Shift` for 1 second).
 

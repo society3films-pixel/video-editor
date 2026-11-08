@@ -12,7 +12,7 @@ import {
 import { resolveAutoFlipCropRender } from "./crop-resolvers.util";
 import { resolveFrameLayoutBranch } from "./frame-layout-branch.util";
 import { resolveClipperLayoutRender } from "./layout-resolvers.util";
-import { applyFramingOverride, findFramingOverride, type ClipperFramingOverride } from "./framing-override.util";
+import { applyFramingOverride, evaluateClipFraming, type ClipFramingRender } from "./framing-override.util";
 import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
 import type { ClipperClipSegmentWindow } from "../segmentation/segmentation.types";
 
@@ -78,13 +78,13 @@ function splitDestinations(count: number, output: FrameEffectSize): ClipperFrame
 }
 
 /** Exact crop/panel geometry consumed by the canvas renderer, without captions. */
-export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[]; segments?: ClipperClipSegmentWindow[]; framingOverrides?: ClipperFramingOverride[] }): ClipperFrameGeometry {
+export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[]; segments?: ClipperClipSegmentWindow[]; framing?: ClipFramingRender }): ClipperFrameGeometry {
   const resolved = formatDef.mode === "crop" ? resolveClipperLayoutRender(render.smartCropAnalysis, formatDef.id, source, t) : undefined;
   const regions = formatDef.mode === "crop" ? cachedLayoutRegions(render.smartCropAnalysis) : [];
   const branch = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
-  const override = render.framingOverrides?.length
-    ? findFramingOverride(
-        render.framingOverrides,
+  const override = render.framing?.track.keyframes.length
+    ? evaluateClipFraming(
+        render.framing,
         render.segments?.length ? sourceTimeToLocalTime(render.segments, t) : Math.max(0, t),
       )
     : undefined;

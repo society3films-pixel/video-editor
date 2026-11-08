@@ -26,6 +26,7 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
     confirmRange,
     refreshExportHistory,
     getClipEditorSource,
+    saveClipFramingTrack,
     reset,
     sourceUrl,
     rangeLocked,
@@ -152,7 +153,7 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
           sourceFileName={state.sourceFileName}
           projectId={project.id}
           onRefreshHistory={refreshExportHistory}
-          getClipEditorSource={getClipEditorSource}
+          editorBridge={{ getSource: getClipEditorSource, saveFraming: saveClipFramingTrack }}
         />
       )}
 

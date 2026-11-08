@@ -3,7 +3,9 @@ import { Box, Flex, HStack, Text, VStack } from "@chakra-ui/react";
 import { AlertTriangle, Clapperboard } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { ClipperVideoEditor } from "../editor/clipper-video-editor.component";
-import type { ClipEditorSource } from "../editor/clip-editor-source.util";
+import type { ClipEditorBridge } from "../editor/clip-editor-source.util";
+import { resolveExportEditorTarget, type ExportEditorTarget } from "../editor/open-export-editor.util";
+import { appToast } from "../../../shared/utils/toast.service";
 import {
   CLIPPER_FORMAT_DEFS,
   getBadgePlatformsForFormat,
@@ -29,7 +31,9 @@ interface ClipperExportFormatRowProps {
   projectId: string;
   /** Called after an edited copy of this export is saved. */
   onEdited?: () => void;
-  getClipEditorSource?: (result: ClipperFormatResult) => ClipEditorSource | null;
+  editorBridge?: ClipEditorBridge;
+  /** Every export in the list, to find the original behind an edited export. */
+  allExports?: readonly ClipperFormatResult[];
 }
 
 function formatExportedAt(exportedAt: string): string {
@@ -42,11 +46,22 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
   result,
   projectId,
   onEdited,
-  getClipEditorSource,
+  editorBridge,
+  allExports = [],
 }) => {
   const { theme } = useClipperUi();
-  const [editorSource, setEditorSource] = useState<ClipEditorSource | null | undefined>(undefined);
-  const editorOpen = editorSource !== undefined;
+  const [editorTarget, setEditorTarget] = useState<ExportEditorTarget | null>(null);
+  const [openingEditor, setOpeningEditor] = useState(false);
+  const openEditor = async () => {
+    setOpeningEditor(true);
+    try {
+      const target = await resolveExportEditorTarget(result, allExports, editorBridge);
+      if (target.warning) appToast.info("Opening the edited video", target.warning);
+      setEditorTarget(target);
+    } finally {
+      setOpeningEditor(false);
+    }
+  };
   const frame = getClipperCardFrameSize(result.formatId, THUMB_HEIGHT);
   const isMissing = result.isMissing === true;
   const exportedAtLabel = formatExportedAt(result.exportedAt);
@@ -167,7 +182,8 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
           justifyContent="center"
           whiteSpace="nowrap"
           startIcon={<Clapperboard size={16} />}
-          onClick={() => setEditorSource(getClipEditorSource?.(result) ?? null)}
+          onClick={() => void openEditor()}
+          loading={openingEditor}
           disabled={isMissing || result.registrationPending === true}
         >
           Edit video
@@ -178,12 +194,19 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
           disabled={isMissing}
         />
       </VStack>
-      {editorOpen ? (
+      {editorTarget ? (
         <ClipperVideoEditor
-          result={result}
+          result={editorTarget.base}
+          openedResult={editorTarget.opened}
+          savedEdit={editorTarget.savedEdit}
           projectId={projectId}
-          source={editorSource}
-          onClose={() => setEditorSource(undefined)}
+          source={editorTarget.source}
+          onSaveFraming={
+            editorTarget.source && editorBridge
+              ? (track) => editorBridge.saveFraming(editorTarget.source!.clip, track)
+              : undefined
+          }
+          onClose={() => setEditorTarget(null)}
           onSaved={() => onEdited?.()}
         />
       ) : null}

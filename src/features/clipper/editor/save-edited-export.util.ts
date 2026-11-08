@@ -11,11 +11,9 @@ import type { StreamTargetChunk } from "mediabunny";
 import { renderClipperFormat } from "../engine/render/index";
 import { prepareExportMedia } from "../lib/media/media-preflight.util";
 import { withClipperProjectRender } from "../persistence/project-write-lifecycle.util";
-import {
-  clipEditNeedsPostProcess,
-  clipEditNeedsSourceRender,
-  type ClipEdit,
-} from "./clip-edit.util";
+import { saveExportEdit } from "../persistence/clipper-clips-api.util";
+import { clipEditNeedsPostProcess, type ClipEdit } from "./clip-edit.util";
+import { toPersistedClipEdit } from "./clip-edit-persist.util";
 import { applyEditToFrameContext, type ClipEditorSource } from "./clip-editor-source.util";
 import { renderClipEdit } from "./render-clip-edit.util";
 
@@ -24,6 +22,13 @@ export interface SaveEditedExportOptions {
   onProgress?: (ratio: number) => void;
   /** Needed when the edit changes captions or framing. */
   source?: ClipEditorSource | null;
+  /**
+   * Re-render from the source video (captions or framing changed, or the export is older than
+   * the clip's current render inputs). Otherwise the export file itself is edited.
+   */
+  needsSourceRender: boolean;
+  /** Export whose title, description and hashtags the new export copies; defaults to the base. */
+  metadataFrom?: ClipperFormatResult;
 }
 
 type RenderToTarget = (
@@ -42,7 +47,7 @@ function buildEditRender(
   options: SaveEditedExportOptions,
 ): RenderToTarget {
   const { signal, onProgress, source } = options;
-  const needsSource = clipEditNeedsSourceRender(edit);
+  const needsSource = options.needsSourceRender;
   const needsPost = clipEditNeedsPostProcess(edit, duration);
 
   if (!needsSource) {
@@ -119,13 +124,16 @@ function downloadBlob(blob: Blob, fileName: string): void {
 /**
  * Renders the edit and saves it as a **new** export next to the original (the original file is
  * never touched), copying its clip and social metadata so it shows up in Exports and Publish.
+ * The edit itself is saved with the new export so the editor can reopen it.
+ *
+ * `original` is the unedited base export: its file is what cuts and text are applied to.
  */
 export async function saveEditedClipperExport(
   projectId: string,
   original: ClipperFormatResult,
   edit: ClipEdit,
   duration: number,
-  options: SaveEditedExportOptions = {},
+  options: SaveEditedExportOptions,
 ): Promise<SaveEditedExportOutcome> {
   const fileName = buildEditedFileName(original);
   const sourceFile = () => resolveSourceFile(original, projectId);
@@ -147,8 +155,10 @@ export async function saveEditedClipperExport(
     try {
       const result = await render(sink.writable);
       const disk = await sink.finalize();
+      const meta = options.metadataFrom ?? original;
+      const exportId = createClipperExportId();
       await upsertClipperExport(projectId, {
-        id: createClipperExportId(),
+        id: exportId,
         clipIndex: original.clipIndex,
         formatId: original.formatId,
         fileName: sink.fileName,
@@ -159,14 +169,19 @@ export async function saveEditedClipperExport(
         exportedAt: new Date().toISOString(),
         clipStartSec: original.clipStartSec,
         clipEndSec: original.clipEndSec,
-        transcriptPlain: original.transcriptPlain,
-        transcriptTimestamped: original.transcriptTimestamped,
-        socialTitle: original.socialTitle,
-        socialShortDescription: original.socialShortDescription,
-        socialDescription: original.socialDescription,
-        socialDescriptionTimestamped: original.socialDescriptionTimestamped,
-        socialHashtags: original.socialHashtags,
+        transcriptPlain: meta.transcriptPlain,
+        transcriptTimestamped: meta.transcriptTimestamped,
+        socialTitle: meta.socialTitle,
+        socialShortDescription: meta.socialShortDescription,
+        socialDescription: meta.socialDescription,
+        socialDescriptionTimestamped: meta.socialDescriptionTimestamped,
+        socialHashtags: meta.socialHashtags,
       });
+      await saveExportEdit(projectId, exportId, {
+        version: 1,
+        baseExportId: original.id,
+        edit: toPersistedClipEdit(edit),
+      }).catch((error) => console.warn("[ClipEditor] Could not save the edit for reopening:", error));
       return { kind: "saved" as const, fileName: sink.fileName };
     } catch (error) {
       await sink.abort().catch(() => {});

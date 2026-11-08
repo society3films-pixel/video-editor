@@ -1,16 +1,12 @@
 import React from "react";
 import { Box, HStack, Text, VStack } from "@chakra-ui/react";
-import { Crosshair, Eye, EyeOff, RotateCcw, Sparkles } from "lucide-react";
+import { Crosshair, Diamond, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
-import {
-  captionGroupText,
-  formatEditorTime,
-  type ClipEditSegment,
-  type ClipSegmentFraming,
-} from "./clip-edit.util";
+import { captionGroupText, formatEditorTime } from "./clip-edit.util";
+import type { ClipFramingKeyframe, ClipperFramingValue } from "../engine/render/framing-override.util";
 import { Section, SliderRow, fieldStyle } from "./clipper-editor-side-panel.component";
 
 function ChoiceButton({
@@ -137,137 +133,194 @@ export const ClipperEditorCaptionsPanel: React.FC<CaptionsPanelProps> = ({
 // ---- Framing ----------------------------------------------------------------------------------
 
 interface FramingPanelProps {
-  segment: ClipEditSegment | null;
-  segmentNumber: number;
-  partCount: number;
-  onChange: (framing: ClipSegmentFraming | undefined) => void;
+  shot: { index: number; start: number; end: number; count: number };
+  /** Framing at the playhead; undefined = AI framing. */
+  value: ClipperFramingValue | undefined;
+  keyframes: ClipFramingKeyframe[];
+  keyframeAtPlayhead: ClipFramingKeyframe | undefined;
+  /** The current shot starts at a shot change the user added (and can remove). */
+  userShotStart: boolean;
+  currentTime: number;
+  onChange: (value: ClipperFramingValue) => void;
   onLock: () => void;
+  onAddKeyframe: () => void;
+  onRemoveKeyframe: (id: string) => void;
+  onSeek: (localTime: number) => void;
+  onResetShot: () => void;
   onApplyToAll: () => void;
+  onAddShotBoundary: () => void;
+  onRemoveShotBoundary: () => void;
 }
 
+const DEFAULT_VALUE: ClipperFramingValue = { mode: "auto", x: 0, y: 0, zoom: 1, singleShot: false };
+
 export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
-  segment,
-  segmentNumber,
-  partCount,
+  shot,
+  value,
+  keyframes,
+  keyframeAtPlayhead,
+  userShotStart,
+  currentTime,
   onChange,
   onLock,
+  onAddKeyframe,
+  onRemoveKeyframe,
+  onSeek,
+  onResetShot,
   onApplyToAll,
+  onAddShotBoundary,
+  onRemoveShotBoundary,
 }) => {
   const { theme } = useClipperUi();
-  if (!segment) {
-    return (
-      <Section title="Framing">
-        <Text fontSize="xs" color={theme.text.muted}>
-          Move the playhead onto a part to adjust its framing.
-        </Text>
-      </Section>
-    );
-  }
-  const framing = segment.framing;
-  const update = (patch: Partial<ClipSegmentFraming>) =>
-    onChange({ mode: "auto", x: 0, y: 0, zoom: 1, singleShot: false, ...framing, ...patch });
+  const current = value ?? DEFAULT_VALUE;
+  const update = (patch: Partial<ClipperFramingValue>) => onChange({ ...current, ...patch });
+  const animated = keyframes.length >= 2;
+  const smallButton = { h: "30px", fontSize: "xs", px: 2, justifyContent: "center" } as const;
 
   return (
-    <Section title={partCount > 1 ? `Framing · Part ${segmentNumber}` : "Framing"}>
-      <HStack gap={2}>
-        <ChoiceButton
-          selected={!framing || framing.mode === "auto"}
-          onClick={() => update({ mode: "auto", x: 0, y: 0 })}
-          title="Follow the AI camera, optionally nudged"
-        >
-          <Sparkles size={13} /> Follow AI
-        </ChoiceButton>
-        <ChoiceButton
-          selected={framing?.mode === "fixed"}
-          onClick={() => framing?.mode !== "fixed" && onLock()}
-          title="Lock the camera where you put it"
-        >
-          <Crosshair size={13} /> Locked
-        </ChoiceButton>
-      </HStack>
-      <Text fontSize="xs" color={theme.text.muted}>
-        Drag the picture to reposition. {partCount > 1 ? "Split the clip to frame each shot on its own." : "Split the clip to frame different shots differently."}
-      </Text>
-      <SliderRow
-        label="Zoom"
-        value={framing?.zoom ?? 1}
-        min={1}
-        max={3}
-        step={0.05}
-        display={`${Math.round((framing?.zoom ?? 1) * 100)}%`}
-        onChange={(zoom) => update({ zoom })}
-      />
-      {framing?.mode === "fixed" ? (
-        <>
-          <SliderRow
-            label="Horizontal"
-            value={framing.x}
-            min={0}
-            max={1}
-            step={0.005}
-            display={`${Math.round(framing.x * 100)}%`}
-            onChange={(x) => update({ x })}
-          />
-          <SliderRow
-            label="Vertical"
-            value={framing.y}
-            min={0}
-            max={1}
-            step={0.005}
-            display={`${Math.round(framing.y * 100)}%`}
-            onChange={(y) => update({ y })}
-          />
-        </>
-      ) : (
-        <>
-          <SliderRow
-            label="Nudge left / right"
-            value={framing?.x ?? 0}
-            min={-1}
-            max={1}
-            step={0.01}
-            display={`${Math.round((framing?.x ?? 0) * 100)}`}
-            onChange={(x) => update({ x })}
-          />
-          <SliderRow
-            label="Nudge up / down"
-            value={framing?.y ?? 0}
-            min={-1}
-            max={1}
-            step={0.01}
-            display={`${Math.round((framing?.y ?? 0) * 100)}`}
-            onChange={(y) => update({ y })}
-          />
-        </>
-      )}
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
-        <input
-          type="checkbox"
-          checked={framing?.singleShot ?? false}
-          onChange={(event) => update({ singleShot: event.target.checked })}
-          style={{ accentColor: clipperTheme.accent }}
+    <VStack align="stretch" gap={3}>
+      <Section title={shot.count > 1 ? `Shot ${shot.index + 1} of ${shot.count}` : "Framing"}>
+        <Text fontSize="xs" color={theme.text.muted}>
+          {formatEditorTime(shot.start)} – {formatEditorTime(shot.end)} ·{" "}
+          {keyframes.length === 0
+            ? "AI framing"
+            : animated
+              ? `Camera moves between ${keyframes.length} keyframes`
+              : "Your framing for the whole shot"}
+        </Text>
+        <HStack gap={2}>
+          <ChoiceButton
+            selected={current.mode === "auto"}
+            onClick={() => current.mode !== "auto" && update({ mode: "auto", x: 0, y: 0, zoom: 1 })}
+            title="Follow the AI camera, optionally nudged"
+          >
+            <Sparkles size={13} /> Follow AI
+          </ChoiceButton>
+          <ChoiceButton
+            selected={current.mode === "fixed"}
+            onClick={() => current.mode !== "fixed" && onLock()}
+            title="Place the camera yourself"
+          >
+            <Crosshair size={13} /> Manual
+          </ChoiceButton>
+        </HStack>
+        <Text fontSize="xs" color={theme.text.muted}>
+          Drag the picture to reposition. Changes apply to this shot only; other shots keep their framing.
+        </Text>
+        <SliderRow
+          label="Zoom"
+          value={current.zoom}
+          min={1}
+          max={3}
+          step={0.05}
+          display={`${Math.round(current.zoom * 100)}%`}
+          onChange={(zoom) => update({ zoom })}
         />
-        No split screen in this part
-      </label>
-      <HStack gap={2}>
-        <OutlinedActionButton
-          flex={1}
-          justifyContent="center"
-          h="32px"
-          fontSize="xs"
-          px={2}
-          startIcon={<RotateCcw size={14} />}
-          onClick={() => onChange(undefined)}
-          disabled={!framing}
-        >
-          AI framing
-        </OutlinedActionButton>
-        {partCount > 1 ? (
-          <OutlinedActionButton flex={1} justifyContent="center" h="32px" fontSize="xs" px={2} onClick={onApplyToAll}>
-            Apply to all parts
+        {current.mode === "fixed" ? (
+          <>
+            <SliderRow label="Horizontal" value={current.x} min={0} max={1} step={0.005} display={`${Math.round(current.x * 100)}%`} onChange={(x) => update({ x })} />
+            <SliderRow label="Vertical" value={current.y} min={0} max={1} step={0.005} display={`${Math.round(current.y * 100)}%`} onChange={(y) => update({ y })} />
+          </>
+        ) : (
+          <>
+            <SliderRow label="Nudge left / right" value={current.x} min={-1} max={1} step={0.01} display={`${Math.round(current.x * 100)}`} onChange={(x) => update({ x })} />
+            <SliderRow label="Nudge up / down" value={current.y} min={-1} max={1} step={0.01} display={`${Math.round(current.y * 100)}`} onChange={(y) => update({ y })} />
+          </>
+        )}
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={current.singleShot}
+            onChange={(event) => update({ singleShot: event.target.checked })}
+            style={{ accentColor: clipperTheme.accent }}
+          />
+          No split screen in this shot
+        </label>
+        <HStack gap={2}>
+          <OutlinedActionButton flex={1} {...smallButton} startIcon={<RotateCcw size={13} />} onClick={onResetShot} disabled={keyframes.length === 0}>
+            Back to AI
           </OutlinedActionButton>
+          {shot.count > 1 ? (
+            <OutlinedActionButton flex={1} {...smallButton} onClick={onApplyToAll} disabled={keyframes.length === 0}>
+              Use for all shots
+            </OutlinedActionButton>
+          ) : null}
+        </HStack>
+      </Section>
+
+      <Section title="Camera moves">
+        <Text fontSize="xs" color={theme.text.muted}>
+          To make the camera move, add a keyframe, go to another moment in the shot and change the framing.
+          The camera glides between keyframes.
+        </Text>
+        <HStack gap={2}>
+          <OutlinedActionButton
+            flex={1}
+            {...smallButton}
+            startIcon={<Plus size={13} />}
+            onClick={onAddKeyframe}
+            disabled={Boolean(keyframeAtPlayhead)}
+          >
+            Add keyframe here
+          </OutlinedActionButton>
+          {keyframeAtPlayhead ? (
+            <OutlinedActionButton flex={1} {...smallButton} tone="danger" onClick={() => onRemoveKeyframe(keyframeAtPlayhead.id)}>
+              Remove keyframe
+            </OutlinedActionButton>
+          ) : null}
+        </HStack>
+        {keyframes.length > 0 ? (
+          <VStack align="stretch" gap={1}>
+            {keyframes.map((keyframe, index) => {
+              const active = Math.abs(keyframe.t - currentTime) <= 0.08;
+              return (
+                <HStack
+                  key={keyframe.id}
+                  gap={2}
+                  px={2}
+                  py={1}
+                  borderRadius="sm"
+                  bg={active ? `rgba(${clipperTheme.accentTintRgb},0.18)` : "transparent"}
+                >
+                  <Box as="button" display="flex" alignItems="center" gap={2} flex={1} cursor="pointer" onClick={() => onSeek(keyframe.t)}>
+                    <Diamond size={11} fill={active ? clipperTheme.accentGlow : "none"} color={clipperTheme.accentGlow} />
+                    <Text fontSize="xs" fontFamily="mono">{formatEditorTime(keyframe.t)}</Text>
+                    <Text fontSize="xs" color={theme.text.muted}>
+                      {keyframe.mode === "fixed" ? "Manual" : "Follow AI"} · {Math.round(keyframe.zoom * 100)}%
+                    </Text>
+                  </Box>
+                  <Box
+                    as="button"
+                    aria-label={`Remove keyframe ${index + 1}`}
+                    color={theme.text.muted}
+                    _hover={{ color: theme.status.danger }}
+                    cursor="pointer"
+                    onClick={() => onRemoveKeyframe(keyframe.id)}
+                  >
+                    <X size={13} />
+                  </Box>
+                </HStack>
+              );
+            })}
+          </VStack>
         ) : null}
-      </HStack>
-    </Section>
+      </Section>
+
+      <Section title="Shot changes">
+        <Text fontSize="xs" color={theme.text.muted}>
+          Shots are found automatically. If the AI missed a cut, add one at the playhead so each side can be framed on its own.
+        </Text>
+        <HStack gap={2}>
+          <OutlinedActionButton flex={1} {...smallButton} startIcon={<ScissorsLineDashed size={13} />} onClick={onAddShotBoundary}>
+            Add shot change here
+          </OutlinedActionButton>
+          {userShotStart ? (
+            <OutlinedActionButton flex={1} {...smallButton} onClick={onRemoveShotBoundary}>
+              Remove this shot change
+            </OutlinedActionButton>
+          ) : null}
+        </HStack>
+      </Section>
+    </VStack>
   );
 };

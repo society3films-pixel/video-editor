@@ -12,8 +12,8 @@ import {
   getOutputDuration,
   sourceToOutputTime,
   type ClipEdit,
-  type ClipSegmentFraming,
 } from "./clip-edit.util";
+import type { ClipperFramingValue } from "../engine/render/framing-override.util";
 import type { ClipEditorSource } from "./clip-editor-source.util";
 
 /** Largest preview canvas height; the final render still uses the full export size. */
@@ -99,11 +99,11 @@ export function lockedFramingFromAi(
   baseFrameContext: ClipperFrameContext,
   videoSize: FrameEffectSize,
   videoTime: number,
-  current: ClipSegmentFraming,
-): ClipSegmentFraming {
+  current: ClipperFramingValue,
+): ClipperFramingValue {
   const geometry = resolveClipperFrameGeometry(source.formatDef, videoSize, source.outputSize, videoTime, {
     ...baseFrameContext,
-    framingOverrides: undefined,
+    framing: undefined,
   });
   const crop = geometry.panels[0]?.source;
   if (!crop) return { ...current, mode: "fixed", x: 0.5, y: 0.5 };
@@ -118,12 +118,12 @@ export function lockedFramingFromAi(
 
 /** Converts a drag on the preview (in preview pixels) into a framing change. */
 export function dragFraming(
-  framing: ClipSegmentFraming,
+  framing: ClipperFramingValue,
   dx: number,
   dy: number,
   preview: FrameEffectSize,
   videoSize: FrameEffectSize,
-): ClipSegmentFraming {
+): ClipperFramingValue {
   const zoom = Math.max(1, framing.zoom);
   if (framing.mode === "auto") {
     return {

@@ -1,14 +1,34 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Box, Button, Flex, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
-import { Pause, Play, RotateCcw, Scissors, Trash2, Undo2, X } from "lucide-react";
+import { Film, Pause, Play, RotateCcw, Scissors, Trash2, Undo2, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { appToast } from "../../../shared/utils/toast.service";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import type { ClipperFormatResult } from "../shared/state.util";
+import type { ClipperFormatDef } from "../shared/formats.util";
 import {
-  createDefaultSegmentFraming,
+  evaluateFramingTrack,
+  shotRangeAt,
+  type ClipFramingTrack,
+  type ClipperFramingValue,
+} from "../engine/render/framing-override.util";
+import {
+  addFramingKeyframe,
+  addShotBoundary,
+  applyFramingToAllShots,
+  clipEditChangesCaptions,
+  createDefaultFramingValue,
+  framingShotBoundaries,
+  framingTracksEqual,
+  KEYFRAME_SNAP_SEC,
+  keyframesInShot,
+  removeFramingKeyframe,
+  removeShotBoundary,
+  resetShotFraming,
+  setFramingAt,
+  splitClipEditAtShots,
   createInitialClipEdit,
   createTextOverlay,
   findNextSegment,
@@ -16,7 +36,6 @@ import {
   formatEditorTime,
   getFadeFactor,
   getOutputDuration,
-  isClipEditUnchanged,
   removeClipEditSegment,
   resetClipEditCuts,
   setCaptionGroupText,
@@ -24,8 +43,8 @@ import {
   splitClipEditAt,
   trimClipEditSegment,
   type ClipEdit,
-  type ClipSegmentFraming,
 } from "./clip-edit.util";
+import type { PersistedClipEdit } from "./clip-edit-persist.util";
 import { applyEditToFrameContext, type ClipEditorSource } from "./clip-editor-source.util";
 import {
   createEditorTimeMap,
@@ -40,7 +59,22 @@ import { ClipperEditorCaptionsPanel, ClipperEditorFramingPanel } from "./clipper
 import { saveEditedClipperExport } from "./save-edited-export.util";
 
 interface ClipperVideoEditorProps {
-  result: ClipperFormatResult;
+  /**
+   * Export mode: the unedited export whose file cuts and text are applied to. Omit for clip
+   * mode (Preview's "Fix framing"), which edits only the clip's framing.
+   */
+  result?: ClipperFormatResult;
+  /** The export the user opened (may be an edited copy of `result`); used for title and metadata. */
+  openedResult?: ClipperFormatResult;
+  /** A previously saved edit to continue from. */
+  savedEdit?: PersistedClipEdit | null;
+  /** Clip mode title, e.g. "Clip 3". */
+  clipTitle?: string;
+  /** Clip mode: formats the framing can be previewed in. */
+  formatOptions?: ClipperFormatDef[];
+  onFormatChange?: (formatId: string) => void;
+  /** Saves the clip's framing to the project (applies to Preview and every format). */
+  onSaveFraming?: (track: ClipFramingTrack) => Promise<void>;
   projectId: string;
   /**
    * The project's source video and render context for this clip. When present, captions and
@@ -72,24 +106,37 @@ function isTypingTarget(target: EventTarget | null): boolean {
  */
 export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   result,
+  openedResult,
+  savedEdit = null,
+  clipTitle,
+  formatOptions = [],
+  onFormatChange,
+  onSaveFraming,
   projectId,
   source = null,
   onClose,
   onSaved,
 }) => {
+  const clipMode = !result;
   const { theme, scrollbarCss } = useClipperUi();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const outputWidth = source?.outputSize.width ?? result.width;
-  const outputHeight = source?.outputSize.height ?? result.height;
+  const outputWidth = source?.outputSize.width ?? result?.width ?? 1080;
+  const outputHeight = source?.outputSize.height ?? result?.height ?? 1920;
   const canvasSize = useMemo(
     () => previewCanvasSize({ width: outputWidth, height: outputHeight }),
     [outputWidth, outputHeight],
   );
 
   const [duration, setDuration] = useState(source?.duration ?? 0);
-  const [edit, setEdit] = useState<ClipEdit | null>(() => (source ? createInitialClipEdit(source.duration) : null));
+  const [edit, setEdit] = useState<ClipEdit | null>(() => {
+    if (!source) return null;
+    const base = savedEdit ?? createInitialClipEdit(source.duration);
+    return { ...base, framing: source.framingTrack };
+  });
+  /** What the editor opened with, to tell whether anything changed. */
+  const baselineRef = useRef<{ edit: string; framing: ClipFramingTrack | null } | null>(null);
   const [history, setHistory] = useState<ClipEdit[]>([]);
   const lastHistoryPushRef = useRef(0);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
@@ -98,7 +145,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<PanelTab>("edit");
+  const [tab, setTab] = useState<PanelTab>(clipMode ? "framing" : "edit");
   const abortRef = useRef<AbortController | null>(null);
 
   const editRef = useRef(edit);
@@ -114,12 +161,26 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   const previewContextRef = useRef(previewContext);
   previewContextRef.current = previewContext;
 
+  if (edit && !baselineRef.current) {
+    baselineRef.current = { edit: JSON.stringify({ ...edit, framing: null }), framing: edit.framing };
+  }
   const outputDuration = edit ? getOutputDuration(edit.segments) : 0;
   const outputTime = edit ? sourceToOutputTime(edit.segments, currentTime) : 0;
-  const dirty = edit ? !isClipEditUnchanged(edit, duration) : false;
-  const playheadSegment = edit ? findSegmentAt(edit.segments, currentTime) ?? null : null;
-  const framingSegment =
-    (edit?.segments.find((segment) => segment.id === selectedSegmentId) ?? playheadSegment) || null;
+  const framingChanged = edit ? !framingTracksEqual(edit.framing, baselineRef.current?.framing ?? null) : false;
+  const editChanged = edit ? JSON.stringify({ ...edit, framing: null }) !== baselineRef.current?.edit : false;
+  const dirty = framingChanged || (!clipMode && editChanged);
+  const isEditedVersion = Boolean(savedEdit);
+  const titleResult = openedResult ?? result;
+
+  const shotBoundaries = useMemo(
+    () => (edit?.framing && source ? framingShotBoundaries(edit.framing, source.aiShotBoundaries) : []),
+    [edit?.framing, source],
+  );
+  const shot = shotRangeAt(shotBoundaries, currentTime, duration);
+  const shotKeyframes = edit?.framing ? keyframesInShot(edit.framing, shotBoundaries, currentTime) : [];
+  const framingValue = edit?.framing ? evaluateFramingTrack(edit.framing, shotBoundaries, currentTime) : undefined;
+  const keyframeAtPlayhead = shotKeyframes.find((k) => Math.abs(k.t - currentTime) <= KEYFRAME_SNAP_SEC);
+  const userShotStart = Boolean(edit?.framing?.extraShotBoundaries.some((b) => Math.abs(b - shot.start) <= 0.05));
 
   // ---- Edit + history -------------------------------------------------------------------------
 
@@ -248,10 +309,10 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     }
     const d = Number.isFinite(video.duration) && video.duration > 0
       ? video.duration
-      : Math.max(0, (result.clipEndSec ?? 0) - (result.clipStartSec ?? 0));
+      : Math.max(0, (result?.clipEndSec ?? 0) - (result?.clipStartSec ?? 0));
     setDuration(d);
-    setEdit((current) => current ?? createInitialClipEdit(d));
-  }, [result, source]);
+    setEdit((current) => current ?? { ...(savedEdit ?? createInitialClipEdit(d)), framing: null });
+  }, [result, savedEdit, source]);
 
   // ---- Editing actions ------------------------------------------------------------------------
 
@@ -314,43 +375,53 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     [applyEdit, source],
   );
 
-  const setSegmentFraming = useCallback(
-    (segmentId: string, framing: ClipSegmentFraming | undefined, coalesce = true) => {
-      applyEdit(
-        (current) => ({
-          ...current,
-          segments: current.segments.map((segment) => (segment.id === segmentId ? { ...segment, framing } : segment)),
-        }),
-        { coalesce },
-      );
+  const updateFraming = useCallback(
+    (updater: (track: ClipFramingTrack) => ClipFramingTrack, options: { coalesce?: boolean; record?: boolean } = {}) => {
+      applyEdit((current) => (current.framing ? { ...current, framing: updater(current.framing) } : current), options);
     },
     [applyEdit],
   );
 
+  const localNow = useCallback(() => {
+    const video = videoRef.current;
+    return video ? timeMapRef.current.toLocal(video.currentTime) : currentTime;
+  }, [currentTime]);
+
+  const setFramingValue = useCallback(
+    (value: ClipperFramingValue, coalesce = true) => {
+      const t = localNow();
+      updateFraming((track) => setFramingAt(track, shotBoundaries, t, value), { coalesce });
+    },
+    [localNow, shotBoundaries, updateFraming],
+  );
+
   const lockFraming = useCallback(() => {
     const video = videoRef.current;
-    if (!source || !framingSegment || !video || !video.videoWidth) return;
-    const videoTime = timeMapRef.current.toVideo(
-      Math.min(Math.max(currentTime, framingSegment.start), framingSegment.end - 0.01),
-    );
+    if (!source || !video || !video.videoWidth) return;
     const next = lockedFramingFromAi(
       source,
       source.frameContext,
       { width: video.videoWidth, height: video.videoHeight },
-      videoTime,
-      framingSegment.framing ?? createDefaultSegmentFraming(),
+      video.currentTime,
+      framingValue ?? createDefaultFramingValue(),
     );
-    setSegmentFraming(framingSegment.id, next, false);
-  }, [currentTime, framingSegment, setSegmentFraming, source]);
+    setFramingValue(next, false);
+  }, [framingValue, setFramingValue, source]);
+
+  const addKeyframe = useCallback(() => {
+    const t = localNow();
+    updateFraming((track) => addFramingKeyframe(track, t, framingValue ?? createDefaultFramingValue()));
+  }, [framingValue, localNow, updateFraming]);
 
   const applyFramingToAll = useCallback(() => {
-    if (!framingSegment) return;
-    const framing = framingSegment.framing;
-    applyEdit((current) => ({
-      ...current,
-      segments: current.segments.map((segment) => ({ ...segment, framing })),
-    }));
-  }, [applyEdit, framingSegment]);
+    if (!framingValue) return;
+    updateFraming((track) => applyFramingToAllShots(track, shotBoundaries, duration, framingValue));
+  }, [duration, framingValue, shotBoundaries, updateFraming]);
+
+  const splitAtShots = useCallback(() => {
+    if (shotBoundaries.length === 0) return;
+    applyEdit((current) => splitClipEditAtShots(current, shotBoundaries));
+  }, [applyEdit, shotBoundaries]);
 
   /** Click toggles playback; dragging (on the Framing tab) repositions the camera. */
   const handlePreviewPointerDown = useCallback(
@@ -358,14 +429,14 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       if (event.button !== 0) return;
       const canvas = event.currentTarget;
       const video = videoRef.current;
-      const canDrag = Boolean(source && tab === "framing" && framingSegment && video?.videoWidth);
+      const canDrag = Boolean(source && tab === "framing" && edit?.framing && video?.videoWidth);
       const startX = event.clientX;
       const startY = event.clientY;
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / Math.max(1, rect.width);
       const scaleY = canvas.height / Math.max(1, rect.height);
-      const segmentId = framingSegment?.id ?? null;
-      const startFraming = framingSegment?.framing ?? createDefaultSegmentFraming();
+      const startFraming = framingValue ?? createDefaultFramingValue();
+      const dragTime = localNow();
       let dragging = false;
       canvas.setPointerCapture(event.pointerId);
 
@@ -373,7 +444,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         const dx = moveEvent.clientX - startX;
         const dy = moveEvent.clientY - startY;
         if (!dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-        if (!canDrag || !segmentId || !video) return;
+        if (!canDrag || !video) return;
         if (!dragging) {
           const current = editRef.current;
           if (current) pushHistory(current, false);
@@ -386,13 +457,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           { width: canvas.width, height: canvas.height },
           { width: video.videoWidth, height: video.videoHeight },
         );
-        applyEdit(
-          (current) => ({
-            ...current,
-            segments: current.segments.map((segment) => (segment.id === segmentId ? { ...segment, framing: next } : segment)),
-          }),
-          { record: false },
-        );
+        updateFraming((track) => setFramingAt(track, shotBoundaries, dragTime, next), { record: false });
       };
       const onUp = () => {
         canvas.removeEventListener("pointermove", onMove);
@@ -404,7 +469,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       canvas.addEventListener("pointerup", onUp);
       canvas.addEventListener("pointercancel", onUp);
     },
-    [applyEdit, framingSegment, pushHistory, source, tab, togglePlay],
+    [edit?.framing, framingValue, localNow, pushHistory, shotBoundaries, source, tab, togglePlay, updateFraming],
   );
 
   // ---- Save / close ---------------------------------------------------------------------------
@@ -424,10 +489,26 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     setSaving(true);
     setSaveProgress(0);
     try {
-      const outcome = await saveEditedClipperExport(projectId, result, current, duration, {
+      if (current.framing && framingChanged && onSaveFraming) {
+        await onSaveFraming(current.framing);
+      }
+      if (clipMode) {
+        appToast.success("Framing saved", "Preview, the render queue and every format now use it.");
+        onSaved();
+        onClose();
+        return;
+      }
+      // Re-render from the source when captions or framing differ from what the file holds.
+      const staleExport = Boolean(
+        source && result!.renderSignature && result!.renderSignature !== source.renderSignature,
+      );
+      const needsSourceRender = Boolean(source) && (clipEditChangesCaptions(current) || framingChanged || staleExport);
+      const outcome = await saveEditedClipperExport(projectId, result!, current, duration, {
         signal: controller.signal,
         onProgress: setSaveProgress,
         source,
+        needsSourceRender,
+        metadataFrom: openedResult,
       });
       appToast.success(
         outcome.kind === "saved" ? "Edited clip saved" : "Edited clip downloaded",
@@ -442,13 +523,13 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         appToast.info("Save cancelled");
       } else {
         const message = error instanceof Error ? error.message : String(error);
-        appToast.error("Could not save the edited clip", message);
+        appToast.error(clipMode ? "Could not save framing" : "Could not save the edited clip", message);
       }
     } finally {
       abortRef.current = null;
       setSaving(false);
     }
-  }, [duration, onClose, onSaved, projectId, result, saving, source]);
+  }, [clipMode, duration, framingChanged, onClose, onSaveFraming, onSaved, openedResult, projectId, result, saving, source]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -469,10 +550,10 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       } else if (event.key === " ") {
         event.preventDefault();
         togglePlay();
-      } else if (event.key.toLowerCase() === "s" && !event.ctrlKey && !event.metaKey) {
+      } else if (event.key.toLowerCase() === "s" && !event.ctrlKey && !event.metaKey && !clipMode) {
         event.preventDefault();
         splitAtPlayhead();
-      } else if (event.key === "Delete" || event.key === "Backspace") {
+      } else if ((event.key === "Delete" || event.key === "Backspace") && !clipMode) {
         event.preventDefault();
         deleteSelected();
       } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -486,7 +567,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [deleteSelected, requestClose, saving, seek, splitAtPlayhead, togglePlay, undo]);
+  }, [clipMode, deleteSelected, requestClose, saving, seek, splitAtPlayhead, togglePlay, undo]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -515,19 +596,28 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     </OutlinedActionButton>
   );
 
-  const tabs: { id: PanelTab; label: string }[] = [
-    { id: "edit", label: "Edit" },
-    { id: "captions", label: "Captions" },
-    { id: "framing", label: "Framing" },
-  ];
-  const segmentIndex = framingSegment && edit ? edit.segments.findIndex((s) => s.id === framingSegment.id) : -1;
+  const tabs: { id: PanelTab; label: string }[] = clipMode
+    ? [{ id: "framing", label: "Framing" }]
+    : [
+        { id: "edit", label: "Edit" },
+        { id: "captions", label: "Captions" },
+        { id: "framing", label: "Framing" },
+      ];
+  const title = clipMode
+    ? `Fix framing · ${clipTitle ?? "Clip"}`
+    : `Edit clip ${(titleResult?.clipIndex ?? 0) + 1} · ${titleResult?.label ?? ""}${isEditedVersion ? " (edited)" : ""}`;
+  const subtitle = clipMode
+    ? "Framing is saved to this clip and used by Preview, the render queue and every format."
+    : isEditedVersion
+      ? "Continuing your saved edit. Saving makes a new export; earlier versions stay."
+      : "Saves a new export. The original stays as it is. Framing changes are saved to the clip.";
   const hasCuts = (edit?.segments.length ?? 0) !== 1 || edit?.segments[0]?.start !== 0 || edit?.segments[0]?.end !== duration;
 
   return createPortal(
     <Flex
       role="dialog"
       aria-modal="true"
-      aria-label={`Edit ${result.label}`}
+      aria-label={title}
       position="fixed"
       inset={0}
       zIndex={2000}
@@ -545,13 +635,37 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       >
         <VStack align="start" gap={0} minW={0}>
           <Text fontSize="md" fontWeight="bold" lineClamp={1}>
-            Edit clip {result.clipIndex + 1} · {result.label}
+            {title}
           </Text>
           <Text fontSize="xs" color={theme.text.muted}>
-            Saves a new export. The original stays as it is.
+            {subtitle}
           </Text>
         </VStack>
         <HStack gap={2}>
+          {clipMode && formatOptions.length > 1 && source ? (
+            <select
+              value={source.formatDef.id}
+              onChange={(event) => onFormatChange?.(event.target.value)}
+              disabled={saving}
+              aria-label="Preview format"
+              title="Framing is shared by every format; preview it in each one"
+              style={{
+                height: 36,
+                background: "rgba(0,0,0,0.35)",
+                color: "inherit",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: 6,
+                padding: "0 8px",
+                fontSize: 13,
+              }}
+            >
+              {formatOptions.map((format) => (
+                <option key={format.id} value={format.id}>
+                  {format.label} preview
+                </option>
+              ))}
+            </select>
+          ) : null}
           <OutlinedActionButton onClick={requestClose} disabled={saving} startIcon={<X size={16} />}>
             Close
           </OutlinedActionButton>
@@ -571,6 +685,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 <Spinner size="xs" />
                 <Text>Saving {Math.round(saveProgress * 100)}%</Text>
               </HStack>
+            ) : clipMode ? (
+              "Save framing"
             ) : (
               "Save as new export"
             )}
@@ -595,7 +711,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
             >
               <video
                 ref={videoRef}
-                src={source?.rangeVideoUrl ?? result.previewUrl}
+                src={source?.rangeVideoUrl ?? result?.previewUrl}
                 playsInline
                 preload="auto"
                 onLoadedMetadata={handleLoadedMetadata}
@@ -654,6 +770,13 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               {formatEditorTime(outputTime)} / {formatEditorTime(outputDuration)}
             </Text>
             <Box flex={1} />
+            {clipMode ? (
+              toolButton("Undo", <Undo2 size={14} />, undo, { shortcut: "Ctrl+Z", disabled: history.length === 0 })
+            ) : (
+              <>
+            {toolButton("Split at shot changes", <Film size={14} />, splitAtShots, {
+              disabled: shotBoundaries.length === 0,
+            })}
             {toolButton("Split", <Scissors size={14} />, splitAtPlayhead, { shortcut: "S" })}
             {toolButton("Delete part", <Trash2 size={14} />, deleteSelected, {
               shortcut: "Del",
@@ -665,6 +788,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               <RotateCcw size={14} />,
               () => applyEdit((current) => resetClipEditCuts(current, duration)),
               { disabled: !hasCuts },
+            )}
+              </>
             )}
           </HStack>
 
@@ -679,10 +804,14 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onSelectSegment={setSelectedSegmentId}
                 onTrimStart={handleTrimStart}
                 onTrim={handleTrim}
+                shotBoundaries={shotBoundaries}
+                keyframes={edit.framing?.keyframes}
+                editableParts={!clipMode}
               />
               <Text fontSize="xs" color={theme.text.muted} mt={2}>
-                Drag the edges of a part to trim it. Move the playhead and press Split (S) to cut, then select a part
-                and Delete it. Striped areas are removed from the saved clip.
+                {clipMode
+                  ? "Dashed lines are shot changes; diamonds are framing keyframes. Move the playhead to the shot that looks wrong and fix it on the right."
+                  : "Drag the edges of a part to trim it. Move the playhead and press Split (S) to cut, then select a part and Delete it. Striped areas are removed from the saved clip. Dashed lines are shot changes."}
               </Text>
             </Box>
           ) : null}
@@ -754,12 +883,27 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               />
             ) : (
               <ClipperEditorFramingPanel
-                segment={framingSegment}
-                segmentNumber={segmentIndex + 1}
-                partCount={edit.segments.length}
-                onChange={(framing) => framingSegment && setSegmentFraming(framingSegment.id, framing)}
+                shot={{ ...shot, count: shotBoundaries.length + 1 }}
+                value={framingValue}
+                keyframes={shotKeyframes}
+                keyframeAtPlayhead={keyframeAtPlayhead}
+                userShotStart={userShotStart}
+                currentTime={currentTime}
+                onChange={(value) => setFramingValue(value)}
                 onLock={lockFraming}
+                onAddKeyframe={addKeyframe}
+                onRemoveKeyframe={(id) => updateFraming((track) => removeFramingKeyframe(track, id))}
+                onSeek={(time) => {
+                  videoRef.current?.pause();
+                  seek(time);
+                }}
+                onResetShot={() => updateFraming((track) => resetShotFraming(track, shotBoundaries, localNow()))}
                 onApplyToAll={applyFramingToAll}
+                onAddShotBoundary={() => {
+                  const t = localNow();
+                  updateFraming((track) => addShotBoundary(track, t));
+                }}
+                onRemoveShotBoundary={() => updateFraming((track) => removeShotBoundary(track, shot.start))}
               />
             )}
           </Box>

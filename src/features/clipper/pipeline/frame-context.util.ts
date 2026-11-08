@@ -4,6 +4,7 @@ import { findClipByIndex } from "../engine/segmentation";
 import type { ClipperFrameContext } from "../engine/render/index";
 import { groupCaptionWords, type AiClipSegmentRange } from "../engine/transcript";
 import type { ClipperGeneratedClip } from "../engine/segmentation";
+import { resolveClipFramingRender } from "./clip-framing.util";
 import {
   getActiveClips,
   normalizeClipperSession,
@@ -41,6 +42,7 @@ export function buildFrameContext(
     ...sessionFrameContextBase(session, settings),
     captionGroups: cached.groups,
     segments: clip.segments,
+    framing: resolveClipFramingRender(session.clipFraming, session.smartCropAnalysis, clip),
   };
 }
 
@@ -98,5 +100,6 @@ export function buildFrameContextForClip(
     ...sessionFrameContextBase(session, settings),
     captionGroups: clip.words.length > 0 ? groupCaptionWords(clip.words, wordsPerGroup) : clip.captionGroups,
     segments: clip.segments,
+    framing: resolveClipFramingRender(session.clipFraming, session.smartCropAnalysis, clip),
   };
 }

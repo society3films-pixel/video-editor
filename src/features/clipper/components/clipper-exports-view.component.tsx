@@ -2,7 +2,7 @@ import React, { useCallback, useEffect } from "react";
 import { VStack } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
 import type { ClipperFormatResult } from "../shared/state.util";
-import type { ClipEditorSource } from "../editor/clip-editor-source.util";
+import type { ClipEditorBridge } from "../editor/clip-editor-source.util";
 import { ClipperExportHistoryList } from "./clipper-export-history-list.component";
 import { ClipperExportsScreenHeader } from "./clipper-exports-screen-header.component";
 import { openClipperExportsDir } from "../persistence/export-files.util";
@@ -12,7 +12,7 @@ interface ClipperExportsViewProps {
   sourceFileName: string | null;
   projectId: string;
   onRefreshHistory: () => void;
-  getClipEditorSource?: (result: ClipperFormatResult) => ClipEditorSource | null;
+  editorBridge?: ClipEditorBridge;
 }
 
 export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
@@ -20,7 +20,7 @@ export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
   sourceFileName,
   projectId,
   onRefreshHistory,
-  getClipEditorSource,
+  editorBridge,
 }) => {
   const navigate = useNavigate();
   const totalExports = exportHistory.length;
@@ -54,7 +54,7 @@ export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
         exports={exportHistory}
         projectId={projectId}
         onExportEdited={onRefreshHistory}
-        getClipEditorSource={getClipEditorSource}
+        editorBridge={editorBridge}
       />
     </VStack>
   );

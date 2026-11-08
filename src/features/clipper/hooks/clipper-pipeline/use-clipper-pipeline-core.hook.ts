@@ -47,6 +47,9 @@ export interface UseClipperPipelineCoreResult {
   setRangeLocked: React.Dispatch<React.SetStateAction<boolean>>;
   disabledCollageRegionIds: string[];
   setDisabledCollageRegionIds: React.Dispatch<React.SetStateAction<string[]>>;
+  /** Bumped whenever session.clipFraming changes, so previews and export checks refresh. */
+  clipFramingRevision: number;
+  setClipFramingRevision: React.Dispatch<React.SetStateAction<number>>;
   autoPartsSegmentLengthSec: AutoPartsSegmentLengthSec;
   setAutoPartsSegmentLengthSec: React.Dispatch<React.SetStateAction<AutoPartsSegmentLengthSec>>;
   persistMetadata: (patch: Partial<ClipperProjectMetadata>, stage?: ClipperStage) => Promise<void>;
@@ -71,6 +74,7 @@ export function useClipperPipelineCore(
   const [persistedExportCount, setPersistedExportCount] = useState(0);
   const [rangeLocked, setRangeLocked] = useState(() => deriveRangeLocked(loaded));
   const [disabledCollageRegionIds, setDisabledCollageRegionIds] = useState<string[]>([]);
+  const [clipFramingRevision, setClipFramingRevision] = useState(0);
   const [autoPartsSegmentLengthSec, setAutoPartsSegmentLengthSec] = useState<AutoPartsSegmentLengthSec>(
     () => deriveAutoPartsSegmentLengthSec(loaded),
   );
@@ -266,6 +270,8 @@ export function useClipperPipelineCore(
     setRangeLocked,
     disabledCollageRegionIds,
     setDisabledCollageRegionIds,
+    clipFramingRevision,
+    setClipFramingRevision,
     autoPartsSegmentLengthSec,
     setAutoPartsSegmentLengthSec,
     persistMetadata,

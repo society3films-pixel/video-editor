@@ -42,6 +42,8 @@ export interface ClipperPreviewProps {
   settingsDrawerVisible?: boolean;
   onOpenInStudio?: (clipIndex: number) => void;
   openingInStudio?: boolean;
+  /** Opens the framing editor for a clip (framing is saved to the clip and used by every format). */
+  onFixFraming?: (clipIndex: number) => void;
 }
 
 export interface UseClipperPreviewPlaybackParams {

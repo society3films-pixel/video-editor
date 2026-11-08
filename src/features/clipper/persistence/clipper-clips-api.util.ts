@@ -4,6 +4,7 @@ import {
 } from "../../../shared/persistence/local-database.util";
 import type { ClipperClipBounds } from "../engine/types/segmentation.types";
 import type { ClipSourceMode } from "../shared/state.util";
+import type { ClipFramingMap } from "../pipeline/clip-framing.util";
 
 export interface ClipperClipSegmentPayload {
   orderIndex: number;
@@ -64,4 +65,33 @@ export async function saveDisabledCollageRegions(
     projectId,
     disabledRegionIds,
   );
+}
+
+/** Per-clip framing keyframes (see pipeline/clip-framing.util), one record per project. */
+export async function fetchClipFraming(projectId: string): Promise<ClipFramingMap> {
+  return (await localRecordGet<ClipFramingMap>("clipper-clip-framing", projectId)) ?? {};
+}
+
+export async function saveClipFraming(projectId: string, framing: ClipFramingMap): Promise<ClipFramingMap> {
+  return localRecordPut("clipper-clip-framing", projectId, projectId, framing);
+}
+
+/** A saved clip-editor session for an edited export, so it can be reopened and tweaked. */
+export interface ClipperExportEditRecord {
+  version: 1;
+  /** The unedited export the edit was made from. */
+  baseExportId: string;
+  edit: unknown;
+}
+
+export async function fetchExportEdit(exportId: string): Promise<ClipperExportEditRecord | null> {
+  return localRecordGet<ClipperExportEditRecord>("clipper-export-edits", exportId);
+}
+
+export async function saveExportEdit(
+  projectId: string,
+  exportId: string,
+  record: ClipperExportEditRecord,
+): Promise<ClipperExportEditRecord> {
+  return localRecordPut("clipper-export-edits", exportId, projectId, record);
 }

@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, HStack } from "@chakra-ui/react";
-import { ExternalLink, ListOrdered } from "lucide-react";
+import { Crop, ExternalLink, ListOrdered } from "lucide-react";
 import {
   OutlinedActionButton,
   getOutlinedActionSurfaceProps,
@@ -40,6 +40,7 @@ export function ClipperPreviewSidePanel({
   onClipSourceModeChange,
   onOpenInStudio,
   openingInStudio = false,
+  onFixFraming,
 }: ClipperPreviewSidePanelProps) {
   const listPreviews = activeClipPreviewsForMode(
     clipSourceMode,
@@ -55,6 +56,13 @@ export function ClipperPreviewSidePanel({
     const active = listPreviews.find((p) => p.clip.index === activeClipIndex);
     const clipIndex = active?.clip.index ?? listPreviews[0]!.clip.index;
     onOpenInStudio(clipIndex);
+  };
+
+  const handleFixFraming = () => {
+    if (!onFixFraming || listPreviews.length === 0) return;
+    const active = listPreviews.find((p) => p.clip.index === activeClipIndex);
+    pausePreview();
+    onFixFraming(active?.clip.index ?? listPreviews[0]!.clip.index);
   };
 
   return (
@@ -99,6 +107,19 @@ export function ClipperPreviewSidePanel({
           >
             Go to render queue
           </OutlinedActionButton>
+
+          {onFixFraming ? (
+            <OutlinedActionButton
+              startIcon={<Crop size={16} />}
+              onClick={handleFixFraming}
+              disabled={listPreviews.length === 0}
+              title="Fix the AI framing of the active clip, shot by shot"
+              flexShrink={0}
+              {...TOOLBAR_ACTION_BUTTON_PROPS}
+            >
+              Fix framing
+            </OutlinedActionButton>
+          ) : null}
 
           {onOpenInStudio ? (
             <OutlinedActionButton
