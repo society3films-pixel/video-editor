@@ -35,6 +35,14 @@ jobs:
           path: C:\ffmpeg\vcpkg\installed
           key: ffmpeg8.1-x64-windows-static-vcpkg2026.07.29
 
+      # The DirectML speech library (sherpa-onnx) takes ~15-20 minutes to compile.
+      - name: Restore GPU speech library
+        id: sherpa-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: third_party/sherpa-onnx-directml/install
+          key: sherpa-directml-${{ hashFiles('scripts/models/build-sherpa-directml.ps1', 'scripts/models/patches/**') }}
+
       - name: Restore Rust build
         uses: Swatinem/rust-cache@v2
         with:
@@ -45,7 +53,7 @@ jobs:
 
       - name: Build
         shell: pwsh
-        run: ./scripts/build-windows-quick.ps1 -NoLaunch
+        run: ./scripts/build-windows-quick.ps1 -NoLaunch -GpuSpeech
 
       # Save FFmpeg as soon as it exists, even if a later step fails.
       - name: Check FFmpeg
@@ -62,6 +70,13 @@ jobs:
         with:
           path: C:\ffmpeg\vcpkg\installed
           key: ffmpeg8.1-x64-windows-static-vcpkg2026.07.29
+
+      - name: Save GPU speech library
+        if: always() && steps.sherpa-cache.outputs.cache-hit != 'true' && hashFiles('third_party/sherpa-onnx-directml/install/lib/sherpa-onnx-c-api.lib') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: third_party/sherpa-onnx-directml/install
+          key: sherpa-directml-${{ hashFiles('scripts/models/build-sherpa-directml.ps1', 'scripts/models/patches/**') }}
 
       - name: Collect the app
         shell: pwsh
