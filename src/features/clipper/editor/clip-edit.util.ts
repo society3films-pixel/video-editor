@@ -6,14 +6,22 @@
  * - `segments` are kept ranges in **source** time (seconds into the exported clip), sorted and
  *   non-overlapping. Anything outside them is cut from the output.
  * - Text overlays and fades are in **output** time (seconds into the edited result).
+ * - Caption edits and per-part framing are in source time too. They need the project's source
+ *   video and are applied by re-rendering the clip from it (see save-edited-export.util).
  */
+import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
+import type { ClipperFramingOverride } from "../engine/render/framing-override.util";
 
 export const MIN_SEGMENT_SEC = 0.1;
+
+export type ClipSegmentFraming = Omit<ClipperFramingOverride, "start" | "end">;
 
 export interface ClipEditSegment {
   id: string;
   start: number;
   end: number;
+  /** Manual framing for this part; absent = AI framing. */
+  framing?: ClipSegmentFraming;
 }
 
 export type ClipTextPosition = "top" | "middle" | "bottom";
@@ -38,6 +46,10 @@ export interface ClipEdit {
   fadeInSec: number;
   fadeOutSec: number;
   textOverlays: ClipTextOverlay[];
+  /** Edited caption lines; null = the AI captions as rendered. */
+  captionGroups: CaptionGroup[] | null;
+  /** Show/hide burned-in captions; null = follow project settings. */
+  captionsVisible: boolean | null;
 }
 
 let idCounter = 0;
@@ -57,6 +69,8 @@ export function createInitialClipEdit(durationSec: number): ClipEdit {
     fadeInSec: 0,
     fadeOutSec: 0,
     textOverlays: [],
+    captionGroups: null,
+    captionsVisible: null,
   };
 }
 
@@ -111,8 +125,8 @@ export function splitClipEditAt(edit: ClipEdit, sourceTime: number): ClipEdit {
   const segments = edit.segments.flatMap((segment) =>
     segment.id === target.id
       ? [
-          { id: createEditId("seg"), start: segment.start, end: sourceTime },
-          { id: createEditId("seg"), start: sourceTime, end: segment.end },
+          { ...segment, id: createEditId("seg"), end: sourceTime },
+          { ...segment, id: createEditId("seg"), start: sourceTime },
         ]
       : [segment],
   );
@@ -200,7 +214,38 @@ export function getFadeFactor(edit: Pick<ClipEdit, "fadeInSec" | "fadeOutSec">, 
   return factor;
 }
 
+/** True when the edit changes captions or framing, which requires re-rendering from the source. */
+export function clipEditNeedsSourceRender(edit: ClipEdit): boolean {
+  return (
+    edit.captionGroups !== null ||
+    edit.captionsVisible !== null ||
+    edit.segments.some((segment) => segment.framing !== undefined)
+  );
+}
+
+/** True when cuts, audio, fades or text change the video after it is rendered. */
+export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number): boolean {
+  const [only] = edit.segments;
+  return !(
+    edit.segments.length === 1 &&
+    only.start <= 0.001 &&
+    only.end >= sourceDuration - 0.001 &&
+    edit.volume === 1 &&
+    edit.fadeInSec === 0 &&
+    edit.fadeOutSec === 0 &&
+    edit.textOverlays.length === 0
+  );
+}
+
+/** Framing overrides for the renderer, one per kept part with manual framing. */
+export function framingOverridesFromEdit(edit: ClipEdit): ClipperFramingOverride[] {
+  return edit.segments.flatMap((segment) =>
+    segment.framing ? [{ ...segment.framing, start: segment.start, end: segment.end }] : [],
+  );
+}
+
 export function isClipEditUnchanged(edit: ClipEdit, sourceDuration: number): boolean {
+  if (clipEditNeedsSourceRender(edit)) return false;
   const [only] = edit.segments;
   return (
     edit.segments.length === 1 &&
@@ -218,4 +263,42 @@ export function formatEditorTime(seconds: number): string {
   const minutes = Math.floor(safe / 60);
   const rest = safe - minutes * 60;
   return `${minutes}:${rest.toFixed(1).padStart(4, "0")}`;
+}
+
+export function createDefaultSegmentFraming(): ClipSegmentFraming {
+  return { mode: "auto", x: 0, y: 0, zoom: 1, singleShot: false };
+}
+
+export function captionGroupText(group: CaptionGroup): string {
+  return group.words.map((word) => word.text).join(" ");
+}
+
+/**
+ * Replaces the wording of one caption line. Word timings are kept when the word count is
+ * unchanged; otherwise the line's time is shared out by word length. Empty text removes the line.
+ */
+export function setCaptionGroupText(groups: readonly CaptionGroup[], index: number, text: string): CaptionGroup[] {
+  const group = groups[index];
+  if (!group) return [...groups];
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return groups.filter((_, i) => i !== index);
+
+  let words: WordCue[];
+  if (tokens.length === group.words.length) {
+    words = group.words.map((word, i) => ({ ...word, text: tokens[i]! }));
+  } else {
+    const start = group.words[0]?.start ?? group.start;
+    const end = group.words[group.words.length - 1]?.end ?? group.end;
+    const span = Math.max(0.05, end - start);
+    const weights = tokens.map((token) => token.length + 1);
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    let cursor = start;
+    words = tokens.map((token, i) => {
+      const length = (span * weights[i]!) / total;
+      const word: WordCue = { text: token, start: cursor, end: cursor + length };
+      cursor += length;
+      return word;
+    });
+  }
+  return groups.map((item, i) => (i === index ? { ...item, words } : item));
 }

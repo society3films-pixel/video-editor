@@ -7,12 +7,80 @@ import {
   resolveClipperExportUploadFile,
 } from "../persistence/resolve-export-upload-file.util";
 import type { ClipperFormatResult } from "../shared/state.util";
-import type { ClipEdit } from "./clip-edit.util";
+import type { StreamTargetChunk } from "mediabunny";
+import { renderClipperFormat } from "../engine/render/index";
+import { prepareExportMedia } from "../lib/media/media-preflight.util";
+import { withClipperProjectRender } from "../persistence/project-write-lifecycle.util";
+import {
+  clipEditNeedsPostProcess,
+  clipEditNeedsSourceRender,
+  type ClipEdit,
+} from "./clip-edit.util";
+import { applyEditToFrameContext, type ClipEditorSource } from "./clip-editor-source.util";
 import { renderClipEdit } from "./render-clip-edit.util";
 
 export interface SaveEditedExportOptions {
   signal?: AbortSignal;
   onProgress?: (ratio: number) => void;
+  /** Needed when the edit changes captions or framing. */
+  source?: ClipEditorSource | null;
+}
+
+type RenderToTarget = (
+  outputSink: WritableStream<StreamTargetChunk> | undefined,
+) => Promise<{ blob?: Blob; width: number; height: number }>;
+
+/**
+ * Builds the render for an edit. Caption/framing changes re-render the clip from the source
+ * video first (into memory); cuts, audio, fades and text are then applied on top.
+ */
+function buildEditRender(
+  projectId: string,
+  sourceFile: () => Promise<File>,
+  edit: ClipEdit,
+  duration: number,
+  options: SaveEditedExportOptions,
+): RenderToTarget {
+  const { signal, onProgress, source } = options;
+  const needsSource = clipEditNeedsSourceRender(edit);
+  const needsPost = clipEditNeedsPostProcess(edit, duration);
+
+  if (!needsSource) {
+    return async (outputSink) => {
+      const result = await renderClipEdit(await sourceFile(), edit, { signal, onProgress, outputSink });
+      return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height };
+    };
+  }
+  if (!source) {
+    throw new Error("Caption and framing changes need the project's source video, which isn't loaded.");
+  }
+
+  return async (outputSink) => {
+    const abortSignal = signal ?? new AbortController().signal;
+    const sourceShare = needsPost ? 0.6 : 0.95;
+    const rangeFile = await prepareExportMedia(source.rangeFile, projectId, abortSignal, (ratio) =>
+      onProgress?.(ratio * 0.05),
+    );
+    const frameContext = applyEditToFrameContext(source.frameContext, edit);
+    const sourceRender = await renderClipperFormat(rangeFile, source.formatDef, frameContext, {
+      signal: abortSignal,
+      clipWindow: { segments: source.clip.segments },
+      outputSink: needsPost ? undefined : outputSink,
+      onProgress: (ratio) => onProgress?.(0.05 + ratio * sourceShare),
+    });
+    const { width, height } = source.outputSize;
+    if (!needsPost) {
+      return { blob: sourceRender.kind === "memory" ? sourceRender.blob : undefined, width, height };
+    }
+    if (sourceRender.kind !== "memory") throw new Error("Unexpected render output.");
+    const rendered = new File([sourceRender.blob], "edited-source.mp4", { type: "video/mp4" });
+    const result = await renderClipEdit(rendered, edit, {
+      signal,
+      outputSink,
+      onProgress: (ratio) => onProgress?.(0.05 + sourceShare + ratio * (0.95 - sourceShare)),
+    });
+    return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height };
+  };
 }
 
 export type SaveEditedExportOutcome =
@@ -56,48 +124,53 @@ export async function saveEditedClipperExport(
   projectId: string,
   original: ClipperFormatResult,
   edit: ClipEdit,
+  duration: number,
   options: SaveEditedExportOptions = {},
 ): Promise<SaveEditedExportOutcome> {
-  const source = await resolveSourceFile(original, projectId);
   const fileName = buildEditedFileName(original);
+  const sourceFile = () => resolveSourceFile(original, projectId);
 
   if (!isTauri()) {
-    const result = await renderClipEdit(source, edit, options);
-    if (result.kind !== "memory") throw new Error("Unexpected render output.");
+    const result = await buildEditRender(projectId, sourceFile, edit, duration, options)(undefined);
+    if (!result.blob) throw new Error("Unexpected render output.");
     downloadBlob(result.blob, fileName);
     return { kind: "downloaded", fileName };
   }
 
-  assertClipperProjectWritable(projectId);
-  const sink = await createClipperExportSink(projectId, fileName);
-  if (!sink) throw new Error("Export storage is unavailable. Check storage access and retry.");
+  return withClipperProjectRender(projectId, options.signal ?? new AbortController().signal, async (signal) => {
+    assertClipperProjectWritable(projectId);
+    // The job signal also aborts when the project is closed mid-save.
+    const render = buildEditRender(projectId, sourceFile, edit, duration, { ...options, signal });
+    const sink = await createClipperExportSink(projectId, fileName);
+    if (!sink) throw new Error("Export storage is unavailable. Check storage access and retry.");
 
-  try {
-    const result = await renderClipEdit(source, edit, { ...options, outputSink: sink.writable });
-    const disk = await sink.finalize();
-    await upsertClipperExport(projectId, {
-      id: createClipperExportId(),
-      clipIndex: original.clipIndex,
-      formatId: original.formatId,
-      fileName: sink.fileName,
-      relativePath: disk.relativePath,
-      width: result.width,
-      height: result.height,
-      fileSize: disk.fileSize,
-      exportedAt: new Date().toISOString(),
-      clipStartSec: original.clipStartSec,
-      clipEndSec: original.clipEndSec,
-      transcriptPlain: original.transcriptPlain,
-      transcriptTimestamped: original.transcriptTimestamped,
-      socialTitle: original.socialTitle,
-      socialShortDescription: original.socialShortDescription,
-      socialDescription: original.socialDescription,
-      socialDescriptionTimestamped: original.socialDescriptionTimestamped,
-      socialHashtags: original.socialHashtags,
-    });
-    return { kind: "saved", fileName: sink.fileName };
-  } catch (error) {
-    await sink.abort().catch(() => {});
-    throw error;
-  }
+    try {
+      const result = await render(sink.writable);
+      const disk = await sink.finalize();
+      await upsertClipperExport(projectId, {
+        id: createClipperExportId(),
+        clipIndex: original.clipIndex,
+        formatId: original.formatId,
+        fileName: sink.fileName,
+        relativePath: disk.relativePath,
+        width: result.width,
+        height: result.height,
+        fileSize: disk.fileSize,
+        exportedAt: new Date().toISOString(),
+        clipStartSec: original.clipStartSec,
+        clipEndSec: original.clipEndSec,
+        transcriptPlain: original.transcriptPlain,
+        transcriptTimestamped: original.transcriptTimestamped,
+        socialTitle: original.socialTitle,
+        socialShortDescription: original.socialShortDescription,
+        socialDescription: original.socialDescription,
+        socialDescriptionTimestamped: original.socialDescriptionTimestamped,
+        socialHashtags: original.socialHashtags,
+      });
+      return { kind: "saved" as const, fileName: sink.fileName };
+    } catch (error) {
+      await sink.abort().catch(() => {});
+      throw error;
+    }
+  });
 }

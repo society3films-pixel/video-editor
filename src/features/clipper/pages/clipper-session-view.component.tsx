@@ -25,6 +25,7 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
     updateSettings,
     confirmRange,
     refreshExportHistory,
+    getClipEditorSource,
     reset,
     sourceUrl,
     rangeLocked,
@@ -151,6 +152,7 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
           sourceFileName={state.sourceFileName}
           projectId={project.id}
           onRefreshHistory={refreshExportHistory}
+          getClipEditorSource={getClipEditorSource}
         />
       )}
 

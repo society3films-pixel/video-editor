@@ -8,6 +8,8 @@ import { useClipperPipelineTranscript } from "./use-clipper-pipeline-transcript.
 import { useClipperPipelineWorkflow } from "./use-clipper-pipeline-workflow.hook";
 import { useClipperResume } from "../use-clipper-resume.hook";
 import { buildFrameContext, buildRangeFrameContext } from "../../pipeline/frame-context.util";
+import { resolveClipEditorSource } from "../../editor/clip-editor-source.util";
+import type { ClipperFormatResult } from "../../shared/state.util";
 import type { RangeFrameContextGetter } from "../../engine/types/render.types";
 import { INITIAL_PIPELINE_STATE } from "./clipper-pipeline.types";
 import type { UseClipperPipelineOptions } from "./clipper-pipeline.types";
@@ -106,6 +108,9 @@ export function useClipperPipeline({ project, token, loaded }: UseClipperPipelin
       );
     },
     getRangeFrameContext,
+    /** Source video + render context for re-rendering an export in the clip editor. */
+    getClipEditorSource: (result: ClipperFormatResult) =>
+      resolveClipEditorSource(sessionRef.current, settings, result),
     sourceUrl: sessionRef.current?.sourceUrl ?? null,
     rangeLocked,
     disabledCollageRegionIds: clips.disabledCollageRegionIds,

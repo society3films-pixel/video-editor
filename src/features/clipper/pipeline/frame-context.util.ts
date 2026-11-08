@@ -3,6 +3,7 @@ import type { ClipperSettings } from "../settings/settings.util";
 import { findClipByIndex } from "../engine/segmentation";
 import type { ClipperFrameContext } from "../engine/render/index";
 import { groupCaptionWords, type AiClipSegmentRange } from "../engine/transcript";
+import type { ClipperGeneratedClip } from "../engine/segmentation";
 import {
   getActiveClips,
   normalizeClipperSession,
@@ -79,5 +80,23 @@ export function buildRangeFrameContext(
     ...sessionFrameContextBase(session, settings),
     captionGroups: groupCaptionWords(captionWords, captionWordsPerGroup(settings.captions)),
     segments: hasRange ? [{ startSec: first!.start, endSec: last!.end }] : undefined,
+  };
+}
+
+/**
+ * Frame context for any generated clip (not only the active source mode), with caption groups
+ * built fresh from the clip's words. Used by the clip editor to re-render an export.
+ */
+export function buildFrameContextForClip(
+  session: ClipperSession,
+  settings: ClipperSettings,
+  clip: ClipperGeneratedClip,
+): ClipperFrameContext {
+  normalizeClipperSession(session);
+  const wordsPerGroup = captionWordsPerGroup(settings.captions);
+  return {
+    ...sessionFrameContextBase(session, settings),
+    captionGroups: clip.words.length > 0 ? groupCaptionWords(clip.words, wordsPerGroup) : clip.captionGroups,
+    segments: clip.segments,
   };
 }

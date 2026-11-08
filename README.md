@@ -62,7 +62,9 @@ Queue clips across formats and track render progress. Connect your channels to p
 
 ### Built-in clip editor
 
-Every finished export (already captioned and reframed) has an **Edit video** button in Exports. The editor lets you trim and split the clip into parts, delete the parts you don't want, change the volume or mute it, add fade in/out, and place text overlays. **Save as new export** renders the result next to the original, which stays unchanged, and copies its social metadata so it is ready to publish.
+Every finished export has an **Edit video** button in Exports. The editor lets you trim and split the clip into parts, delete the parts you don't want, change the volume or mute it, add fade in/out, and place text overlays.
+
+The **Captions** tab lets you fix caption wording line by line, remove lines, or hide captions. The **Framing** tab lets you nudge and zoom the AI camera, or lock it in place, per part (drag the preview to reposition), and turn off split screen. Captions and framing are burned into the exported file, so these changes re-render the clip from the project's source video; they are available while the project's video is loaded and the clip's start and end match the export. **Save as new export** renders the result next to the original, which stays unchanged, and copies its social metadata so it is ready to publish.
 
 Shortcuts: `Space` play/pause, `S` split at playhead, `Delete` remove selected part, `Ctrl+Z` undo, `←`/`→` step a frame (`Shift` for 1 second).
 

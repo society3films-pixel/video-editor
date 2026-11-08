@@ -12,6 +12,9 @@ import {
 import { resolveAutoFlipCropRender } from "./crop-resolvers.util";
 import { resolveFrameLayoutBranch } from "./frame-layout-branch.util";
 import { resolveClipperLayoutRender } from "./layout-resolvers.util";
+import { applyFramingOverride, findFramingOverride, type ClipperFramingOverride } from "./framing-override.util";
+import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
+import type { ClipperClipSegmentWindow } from "../segmentation/segmentation.types";
 
 export interface ClipperFramePanelGeometry {
   source: ClipperCropRect;
@@ -75,10 +78,19 @@ function splitDestinations(count: number, output: FrameEffectSize): ClipperFrame
 }
 
 /** Exact crop/panel geometry consumed by the canvas renderer, without captions. */
-export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[] }): ClipperFrameGeometry {
+export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[]; segments?: ClipperClipSegmentWindow[]; framingOverrides?: ClipperFramingOverride[] }): ClipperFrameGeometry {
   const resolved = formatDef.mode === "crop" ? resolveClipperLayoutRender(render.smartCropAnalysis, formatDef.id, source, t) : undefined;
   const regions = formatDef.mode === "crop" ? cachedLayoutRegions(render.smartCropAnalysis) : [];
-  const { plannedLayout } = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
+  const branch = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
+  const override = render.framingOverrides?.length
+    ? findFramingOverride(
+        render.framingOverrides,
+        render.segments?.length ? sourceTimeToLocalTime(render.segments, t) : Math.max(0, t),
+      )
+    : undefined;
+  const plannedLayout = override?.singleShot && branch.plannedLayout?.mode === "split"
+    ? { ...branch.plannedLayout, mode: "single-crop" as const, viewports: [branch.plannedLayout.viewports[0]!] }
+    : branch.plannedLayout;
   if (plannedLayout?.mode === "split" && plannedLayout.viewports.length >= 2) {
     const viewports = plannedLayout.viewports.slice(0, 3);
     const destinations = splitDestinations(viewports.length, output);
@@ -89,5 +101,7 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
       ? resolveAutoFlipCropRender(render.smartCropAnalysis, formatDef.id, source, t)?.cropRect
       : undefined)
     ?? cropRectForCentroid(source.width, source.height, 0.5, 0.5, output.width / output.height);
-  return { mode: plannedLayout?.mode ?? "single-crop", panels: [{ source: coverCrop(clampToContent(crop, render.smartCropAnalysis?.contentRect, source), output), destination: { x: 0, y: 0, width: output.width, height: output.height } }] };
+  let finalCrop = coverCrop(clampToContent(crop, render.smartCropAnalysis?.contentRect, source), output);
+  if (override) finalCrop = applyFramingOverride(finalCrop, override, source, output);
+  return { mode: plannedLayout?.mode ?? "single-crop", panels: [{ source: finalCrop, destination: { x: 0, y: 0, width: output.width, height: output.height } }] };
 }

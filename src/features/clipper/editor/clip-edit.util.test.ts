@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  captionGroupText,
+  clipEditNeedsPostProcess,
+  clipEditNeedsSourceRender,
+  createDefaultSegmentFraming,
+  framingOverridesFromEdit,
+  setCaptionGroupText,
   createInitialClipEdit,
   createTextOverlay,
   getFadeFactor,
@@ -70,5 +76,41 @@ describe("clip edit model", () => {
     const split = splitClipEditAt(createInitialClipEdit(10), 4);
     expect(isClipEditUnchanged(split, 10)).toBe(false);
     expect(isClipEditUnchanged(resetClipEditCuts(split, 10), 10)).toBe(true);
+  });
+});
+
+describe("caption and framing edits", () => {
+  const groups = [
+    { start: 0, end: 1, words: [{ text: "hello", start: 0, end: 0.5 }, { text: "wrold", start: 0.5, end: 1 }] },
+    { start: 1, end: 2, words: [{ text: "bye", start: 1, end: 2 }] },
+  ];
+
+  it("keeps word timings when the word count is unchanged", () => {
+    const next = setCaptionGroupText(groups, 0, "hello world");
+    expect(next[0].words).toEqual([
+      { text: "hello", start: 0, end: 0.5 },
+      { text: "world", start: 0.5, end: 1 },
+    ]);
+    expect(captionGroupText(next[0])).toBe("hello world");
+    expect(groups[0].words[1].text).toBe("wrold");
+  });
+
+  it("spreads new words across the line and removes empty lines", () => {
+    const longer = setCaptionGroupText(groups, 1, "see you soon");
+    expect(longer[1].words).toHaveLength(3);
+    expect(longer[1].words[0].start).toBe(1);
+    expect(longer[1].words[2].end).toBeCloseTo(2);
+    expect(setCaptionGroupText(groups, 1, "   ")).toHaveLength(1);
+  });
+
+  it("flags source re-render and carries framing across splits", () => {
+    const base = createInitialClipEdit(10);
+    expect(clipEditNeedsSourceRender(base)).toBe(false);
+    const framed = { ...base, segments: [{ ...base.segments[0], framing: createDefaultSegmentFraming() }] };
+    expect(clipEditNeedsSourceRender(framed)).toBe(true);
+    expect(clipEditNeedsPostProcess(framed, 10)).toBe(false);
+    const split = splitClipEditAt(framed, 4);
+    expect(framingOverridesFromEdit(split).map((o) => [o.start, o.end])).toEqual([[0, 4], [4, 10]]);
+    expect(isClipEditUnchanged({ ...base, captionsVisible: false }, 10)).toBe(false);
   });
 });

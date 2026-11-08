@@ -3,6 +3,7 @@ import { Box, Flex, HStack, Text, VStack } from "@chakra-ui/react";
 import { AlertTriangle, Clapperboard } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { ClipperVideoEditor } from "../editor/clipper-video-editor.component";
+import type { ClipEditorSource } from "../editor/clip-editor-source.util";
 import {
   CLIPPER_FORMAT_DEFS,
   getBadgePlatformsForFormat,
@@ -28,6 +29,7 @@ interface ClipperExportFormatRowProps {
   projectId: string;
   /** Called after an edited copy of this export is saved. */
   onEdited?: () => void;
+  getClipEditorSource?: (result: ClipperFormatResult) => ClipEditorSource | null;
 }
 
 function formatExportedAt(exportedAt: string): string {
@@ -40,9 +42,11 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
   result,
   projectId,
   onEdited,
+  getClipEditorSource,
 }) => {
   const { theme } = useClipperUi();
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorSource, setEditorSource] = useState<ClipEditorSource | null | undefined>(undefined);
+  const editorOpen = editorSource !== undefined;
   const frame = getClipperCardFrameSize(result.formatId, THUMB_HEIGHT);
   const isMissing = result.isMissing === true;
   const exportedAtLabel = formatExportedAt(result.exportedAt);
@@ -163,7 +167,7 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
           justifyContent="center"
           whiteSpace="nowrap"
           startIcon={<Clapperboard size={16} />}
-          onClick={() => setEditorOpen(true)}
+          onClick={() => setEditorSource(getClipEditorSource?.(result) ?? null)}
           disabled={isMissing || result.registrationPending === true}
         >
           Edit video
@@ -178,7 +182,8 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
         <ClipperVideoEditor
           result={result}
           projectId={projectId}
-          onClose={() => setEditorOpen(false)}
+          source={editorSource}
+          onClose={() => setEditorSource(undefined)}
           onSaved={() => onEdited?.()}
         />
       ) : null}

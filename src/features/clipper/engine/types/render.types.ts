@@ -1,3 +1,4 @@
+import type { ClipperFramingOverride } from "../render/framing-override.util";
 import type { CaptionGroup } from "../../lib/media/transcription-export.util";
 import type { ClipperLayoutMode } from "../../shared/smart-crop.util";
 import type { ClipperSettings } from "../../settings/settings.util";
@@ -50,6 +51,8 @@ export interface ClipperFrameContext {
   smartCropAnalysis?: ClipperFrameAnalysis | null;
   disabledCollageRegionIds: string[];
   segments?: ClipperClipSegmentWindow[];
+  /** Manual framing from the clip editor, in clip-local time. Absent = pure AI framing. */
+  framingOverrides?: ClipperFramingOverride[];
 }
 
 /** Frame context for an arbitrary word range (`null` = whole range, no clip window). */

@@ -22,7 +22,7 @@ interface ClipperEditorSidePanelProps {
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
 
-const fieldStyle: React.CSSProperties = {
+export const fieldStyle: React.CSSProperties = {
   width: "100%",
   background: "rgba(0,0,0,0.35)",
   color: "inherit",
@@ -33,7 +33,7 @@ const fieldStyle: React.CSSProperties = {
   outline: "none",
 };
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const { theme } = useClipperUi();
   return (
     <VStack
@@ -53,7 +53,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function SliderRow({
+export function SliderRow({
   label,
   value,
   min,
