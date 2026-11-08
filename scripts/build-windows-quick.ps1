@@ -30,6 +30,9 @@ $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is far faster wit
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $VcpkgRoot = "C:\ffmpeg\vcpkg"             # build.rs and .cargo\config.toml expect this path
 $FfmpegLib = Join-Path $VcpkgRoot "installed\x64-windows-static\lib\avcodec.lib"
+# ffmpeg-next 8.1 (src-tauri/Cargo.lock) needs FFmpeg 8.1; vcpkg 2026.10+ ships FFmpeg 9.
+$VcpkgTag = "2026.07.29"
+$FfmpegVersionPattern = '^ffmpeg_8\.1\.'
 $OrtVersion = "1.23.0"
 $OrtDir = Join-Path $ProjectRoot "third_party\onnxruntime-directml\$OrtVersion"
 $WinRuntimeDir = Join-Path $ProjectRoot "src-tauri\resources\win-runtime"
@@ -126,19 +129,27 @@ $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = "link.exe"
 
 # ---- 2. FFmpeg ------------------------------------------------------------------------------
 
-Step "Static FFmpeg (vcpkg)"
-if (Test-Path $FfmpegLib) {
-  Write-Host "Already built."
+Step "Static FFmpeg 8.1 (vcpkg $VcpkgTag)"
+$vcpkgExe = Join-Path $VcpkgRoot "vcpkg.exe"
+$ffmpegInfo = Get-ChildItem -Path (Join-Path $VcpkgRoot "installed\vcpkg\info") -Filter "ffmpeg_*_x64-windows-static.list" -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ((Test-Path $FfmpegLib) -and $ffmpegInfo -and $ffmpegInfo.Name -match $FfmpegVersionPattern) {
+  Write-Host "Already built ($($ffmpegInfo.BaseName))."
 } else {
   if (-not (Test-Path (Join-Path $VcpkgRoot ".git"))) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $VcpkgRoot) | Out-Null
-    Invoke-Checked "Cloning vcpkg" { git clone https://github.com/microsoft/vcpkg.git $VcpkgRoot }
+    New-Item -ItemType Directory -Force -Path $VcpkgRoot | Out-Null
+    Invoke-Checked "Creating the vcpkg folder" { git -C $VcpkgRoot init -q }
+    Invoke-Checked "Adding the vcpkg remote" { git -C $VcpkgRoot remote add origin https://github.com/microsoft/vcpkg.git }
   }
-  if (-not (Test-Path (Join-Path $VcpkgRoot "vcpkg.exe"))) {
-    Invoke-Checked "Bootstrapping vcpkg" { & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics }
+  Invoke-Checked "Fetching vcpkg $VcpkgTag" { git -C $VcpkgRoot fetch -q --depth 1 origin "refs/tags/${VcpkgTag}:refs/tags/$VcpkgTag" }
+  Invoke-Checked "Checking out vcpkg $VcpkgTag" { git -C $VcpkgRoot checkout -q -f $VcpkgTag }
+  Invoke-Checked "Bootstrapping vcpkg" { & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics }
+  if ($ffmpegInfo) {
+    Write-Host "Replacing $($ffmpegInfo.BaseName) with FFmpeg 8.1..."
+    Invoke-Checked "Removing the old FFmpeg" { & $vcpkgExe remove "ffmpeg:x64-windows-static" --recurse }
   }
-  Write-Host "Compiling FFmpeg. This is the slow part (roughly 30-60 minutes)..."
-  Invoke-Checked "Building FFmpeg" { & (Join-Path $VcpkgRoot "vcpkg.exe") install "ffmpeg:x64-windows-static" }
+  Write-Host "Compiling FFmpeg. This is the slow part (roughly 20-60 minutes)..."
+  Invoke-Checked "Building FFmpeg" { & $vcpkgExe install "ffmpeg:x64-windows-static" }
   if (-not (Test-Path $FfmpegLib)) { throw "FFmpeg finished but $FfmpegLib is missing." }
 }
 

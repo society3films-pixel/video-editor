@@ -33,13 +33,15 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: C:\ffmpeg\vcpkg\installed
-          key: ffmpeg-x64-windows-static-v1
+          key: ffmpeg8.1-x64-windows-static-vcpkg2026.07.29
 
       - name: Restore Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target-fast"
           cache-on-failure: true
+          # Bump with the FFmpeg version: ffmpeg-sys-next caches bindings generated from its headers.
+          prefix-key: v1-ffmpeg8.1
 
       - name: Build
         shell: pwsh
@@ -59,7 +61,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: C:\ffmpeg\vcpkg\installed
-          key: ffmpeg-x64-windows-static-v1
+          key: ffmpeg8.1-x64-windows-static-vcpkg2026.07.29
 
       - name: Collect the app
         shell: pwsh
