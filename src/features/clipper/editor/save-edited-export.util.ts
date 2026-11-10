@@ -104,7 +104,8 @@ function buildEditedFileName(original: ClipperFormatResult): string {
   return `${stem}-edited-${stamp}.mp4`;
 }
 
-async function resolveSourceFile(original: ClipperFormatResult, projectId: string): Promise<File> {
+/** The file cuts and text are applied to: the export itself (in memory or on disk). */
+export async function resolveSourceFile(original: ClipperFormatResult, projectId: string): Promise<File> {
   if (original.file) return original.file;
   if (original.blob) return new File([original.blob], resolveClipperExportFileName(original), { type: "video/mp4" });
   const file = await resolveClipperExportUploadFile(original, projectId);

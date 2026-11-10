@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Box, Button, Flex, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
-import { Film, Pause, Play, RotateCcw, Scissors, Trash2, Undo2, X } from "lucide-react";
+import { Film, Pause, Play, RotateCcw, Scissors, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { appToast } from "../../../shared/utils/toast.service";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
@@ -61,7 +61,15 @@ import {
 import { ClipperEditorTimeline } from "./clipper-editor-timeline.component";
 import { ClipperEditorSidePanel } from "./clipper-editor-side-panel.component";
 import { ClipperEditorCaptionsPanel, ClipperEditorFramingPanel } from "./clipper-editor-source-panels.component";
-import { saveEditedClipperExport } from "./save-edited-export.util";
+import { resolveSourceFile, saveEditedClipperExport } from "./save-edited-export.util";
+import {
+  applyAutoEdit,
+  DEFAULT_AUTO_EDIT_OPTIONS,
+  describeAutoEdit,
+  measureLevelGain,
+  type AutoEditOptions,
+} from "./auto-edit.util";
+import { ClipperAutoEditPanel } from "./clipper-auto-edit-panel.component";
 
 interface ClipperVideoEditorProps {
   /**
@@ -151,6 +159,9 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   const [saveProgress, setSaveProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<PanelTab>(clipMode ? "framing" : "edit");
+  const [autoEditOpen, setAutoEditOpen] = useState(false);
+  const [autoEditRunning, setAutoEditRunning] = useState(false);
+  const [autoEditOptions, setAutoEditOptions] = useState<AutoEditOptions>(DEFAULT_AUTO_EDIT_OPTIONS);
   const abortRef = useRef<AbortController | null>(null);
 
   const editRef = useRef(edit);
@@ -525,6 +536,67 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     onClose();
   }, [dirty, onClose, saving]);
 
+  const autoEditWords = source?.clip.words ?? [];
+  const autoEditFaceCache = source?.frameContext.faceCache ?? null;
+
+  const runAutoEdit = useCallback(async () => {
+    const current = editRef.current;
+    if (!current || autoEditRunning) return;
+    videoRef.current?.pause();
+    setAutoEditRunning(true);
+    try {
+      const options: AutoEditOptions = clipMode
+        ? { cutPauses: false, fixFraming: autoEditOptions.fixFraming, punchIns: false, hookTitle: false, levelVolume: false }
+        : autoEditOptions;
+      let levelGain: number | null = null;
+      if (options.levelVolume && result) {
+        const measured = await measureLevelGain(await resolveSourceFile(result, projectId)).catch(() => null);
+        levelGain = measured?.gain ?? null;
+      }
+      const { edit: next, summary } = applyAutoEdit(
+        current,
+        {
+          duration,
+          words: autoEditWords,
+          socialTitle: (openedResult ?? result)?.socialTitle,
+          framing:
+            source && autoEditFaceCache
+              ? {
+                  aiShotBoundaries: source.aiShotBoundaries,
+                  faceSamples: autoEditFaceCache.sortedSamples(),
+                  clipSegments: source.clip.segments,
+                  outputAspect: outputWidth / Math.max(1, outputHeight),
+                }
+              : undefined,
+          levelGain,
+        },
+        options,
+      );
+      applyEdit(() => next);
+      setSelectedSegmentId(null);
+      setAutoEditOpen(false);
+      appToast.success("Auto edit applied", describeAutoEdit(summary));
+    } catch (error) {
+      appToast.error("Auto edit failed", error instanceof Error ? error.message : String(error));
+    } finally {
+      setAutoEditRunning(false);
+    }
+  }, [
+    applyEdit,
+    autoEditFaceCache,
+    autoEditOptions,
+    autoEditRunning,
+    autoEditWords,
+    clipMode,
+    duration,
+    openedResult,
+    outputHeight,
+    outputWidth,
+    projectId,
+    result,
+    source,
+  ]);
+
   const save = useCallback(async () => {
     const current = editRef.current;
     if (!current || saving) return;
@@ -687,6 +759,29 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           </Text>
         </VStack>
         <HStack gap={2}>
+          <Box position="relative">
+            <OutlinedActionButton
+              startIcon={<Sparkles size={16} />}
+              onClick={() => setAutoEditOpen((open) => !open)}
+              disabled={saving || !edit}
+              title={clipMode ? "Fix framing automatically" : "Let the app make a first edit for you"}
+            >
+              {clipMode ? "Auto-fix" : "Auto edit"}
+            </OutlinedActionButton>
+            {autoEditOpen ? (
+              <ClipperAutoEditPanel
+                options={autoEditOptions}
+                onChange={setAutoEditOptions}
+                onApply={() => void runAutoEdit()}
+                onCancel={() => setAutoEditOpen(false)}
+                running={autoEditRunning}
+                framingOnly={clipMode}
+                hasTranscript={autoEditWords.length > 0}
+                hasFaceTracking={Boolean(source && autoEditFaceCache && edit?.framing)}
+                hasExportAudio={Boolean(result)}
+              />
+            ) : null}
+          </Box>
           {clipMode && formatOptions.length > 1 && source ? (
             <select
               value={source.formatDef.id}
@@ -899,6 +994,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 outputTime={outputTime}
                 onChange={(updater) => applyEdit(updater, { coalesce: true })}
                 onAddText={addText}
+                activeSegmentId={selectedSegmentId ?? findSegmentAt(edit.segments, currentTime)?.id ?? null}
               />
             ) : !source ? (
               <VStack align="stretch" gap={2} p={4} borderRadius="lg" border="1px solid" borderColor={theme.surface.hover}>

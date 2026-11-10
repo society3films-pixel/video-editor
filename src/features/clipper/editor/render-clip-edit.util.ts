@@ -15,7 +15,7 @@ import {
 import { createMediabunnyInput } from "../lib/media/mediabunny-file-source.util";
 import { EncodeBackpressure } from "../lib/media/encode-backpressure.util";
 import { assertExportAudioSupported, exportAudioConfig } from "../lib/media/video-frame-effect-audio.util";
-import { drawClipEditOverlays } from "./clip-edit-draw.util";
+import { drawClipEditOverlays, punchInRect } from "./clip-edit-draw.util";
 import { getFadeFactor, getOutputDuration, type ClipEdit } from "./clip-edit.util";
 
 export interface RenderClipEditOptions {
@@ -112,7 +112,13 @@ export async function renderClipEdit(
             lastTimestamp = timestamp;
 
             ctx.clearRect(0, 0, width, height);
-            sample.draw(ctx, 0, 0, width, height);
+            const zoom = segment.zoom ?? 1;
+            if (zoom > 1) {
+              const rect = punchInRect(width, height, zoom);
+              sample.draw(ctx, rect.x, rect.y, rect.width, rect.height);
+            } else {
+              sample.draw(ctx, 0, 0, width, height);
+            }
             drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height);
 
             const outSample = new VideoSample(canvas, { timestamp, duration });

@@ -23,7 +23,12 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
   const value = raw as Partial<PersistedClipEdit>;
   const segments = (Array.isArray(value.segments) ? value.segments : [])
     .filter((s): s is ClipEditSegment => Boolean(s) && isFiniteNumber(s.start) && isFiniteNumber(s.end) && typeof s.id === "string")
-    .map((s) => ({ id: s.id, start: Math.max(0, s.start), end: Math.min(duration, s.end) }))
+    .map((s) => ({
+      id: s.id,
+      start: Math.max(0, s.start),
+      end: Math.min(duration, s.end),
+      ...(isFiniteNumber(s.zoom) && s.zoom > 1 ? { zoom: Math.min(2, s.zoom) } : {}),
+    }))
     .filter((s) => s.end - s.start >= MIN_SEGMENT_SEC)
     .sort((a, b) => a.start - b.start);
   if (segments.length === 0) return null;

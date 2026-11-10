@@ -170,7 +170,11 @@ export const ClipperEditorTimeline: React.FC<ClipperEditorTimelineProps> = ({
                 overflow="hidden"
                 maxW="calc(100% - 28px)"
               >
-                {editableParts ? `Part ${index + 1} · ${formatEditorTime(segment.end - segment.start)}` : ""}
+                {editableParts
+                  ? `Part ${index + 1} · ${formatEditorTime(segment.end - segment.start)}${
+                      segment.zoom && segment.zoom > 1 ? ` · ${Math.round(segment.zoom * 100)}%` : ""
+                    }`
+                  : ""}
               </Text>
               {(editableParts ? (["start", "end"] as const) : []).map((edge) => (
                 <Flex

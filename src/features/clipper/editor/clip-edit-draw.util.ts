@@ -94,3 +94,17 @@ export function drawClipEditOverlays(
     ctx.fillRect(0, 0, width, height);
   }
 }
+
+/** Punch-ins zoom around this point (fraction of the frame), a little above centre where faces are. */
+export const PUNCH_IN_CENTER = { x: 0.5, y: 0.42 } as const;
+
+/** Draw rectangle for a frame zoomed by `zoom` around PUNCH_IN_CENTER. */
+export function punchInRect(width: number, height: number, zoom: number): { x: number; y: number; width: number; height: number } {
+  const z = Math.max(1, zoom);
+  return {
+    x: PUNCH_IN_CENTER.x * width * (1 - z),
+    y: PUNCH_IN_CENTER.y * height * (1 - z),
+    width: width * z,
+    height: height * z,
+  };
+}

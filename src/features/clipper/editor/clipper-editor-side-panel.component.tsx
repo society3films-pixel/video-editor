@@ -18,6 +18,8 @@ interface ClipperEditorSidePanelProps {
   /** Applies a change and records it in undo history. */
   onChange: (updater: (edit: ClipEdit) => ClipEdit) => void;
   onAddText: () => void;
+  /** The selected part, or the one under the playhead, for its punch-in zoom. */
+  activeSegmentId?: string | null;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -249,7 +251,10 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   outputTime,
   onChange,
   onAddText,
+  activeSegmentId = null,
 }) => {
+  const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
+  const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
   const { theme } = useClipperUi();
   const maxFade = Math.max(0, Math.min(3, outputDuration / 2));
   const muted = edit.volume === 0;
@@ -262,6 +267,27 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
 
   return (
     <VStack align="stretch" gap={3}>
+      {activePart ? (
+        <Section title={edit.segments.length > 1 ? `Part ${activePartIndex + 1}` : "Zoom"}>
+          <SliderRow
+            label="Punch-in zoom"
+            value={activePart.zoom ?? 1}
+            min={1}
+            max={1.5}
+            step={0.01}
+            display={`${Math.round((activePart.zoom ?? 1) * 100)}%`}
+            onChange={(zoom) =>
+              onChange((current) => ({
+                ...current,
+                segments: current.segments.map((segment) =>
+                  segment.id === activePart.id ? { ...segment, zoom: zoom > 1.001 ? zoom : undefined } : segment,
+                ),
+              }))
+            }
+          />
+        </Section>
+      ) : null}
+
       <Section title="Audio">
         <HStack gap={3} align="end">
           <Box flex={1}>

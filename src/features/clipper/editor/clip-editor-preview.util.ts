@@ -6,7 +6,7 @@ import {
   sourceTimeToLocalTime,
 } from "../engine/segmentation/clip-time.util";
 import type { FrameEffectSize } from "../lib/media/video-frame-effect.util";
-import { drawClipEditOverlays } from "./clip-edit-draw.util";
+import { drawClipEditOverlays, punchInRect } from "./clip-edit-draw.util";
 import {
   findSegmentAt,
   getOutputDuration,
@@ -77,6 +77,13 @@ export function drawEditorPreviewFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, size.width, size.height);
+  const segment = findSegmentAt(edit.segments, localTime);
+  const zoom = segment?.zoom ?? 1;
+  if (zoom > 1) {
+    // Same transform the renderer uses, so punch-ins preview exactly.
+    const rect = punchInRect(size.width, size.height, zoom);
+    ctx.setTransform(zoom, 0, 0, zoom, rect.x, rect.y);
+  }
   if (video.readyState >= 2 && video.videoWidth > 0) {
     if (source && frameContext) {
       const videoSize = { width: video.videoWidth, height: video.videoHeight };
@@ -86,7 +93,8 @@ export function drawEditorPreviewFrame(
     }
   }
 
-  if (!findSegmentAt(edit.segments, localTime)) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (!segment) {
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(0, 0, size.width, size.height);
   } else {

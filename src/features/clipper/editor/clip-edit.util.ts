@@ -26,6 +26,8 @@ export interface ClipEditSegment {
   id: string;
   start: number;
   end: number;
+  /** Punch-in zoom for this part (1 = none); applied to the rendered export. */
+  zoom?: number;
 }
 
 export type ClipTextPosition = "top" | "middle" | "bottom";
@@ -235,6 +237,7 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
   const [only] = edit.segments;
   return !(
     edit.segments.length === 1 &&
+    (only.zoom ?? 1) === 1 &&
     only.start <= 0.001 &&
     only.end >= sourceDuration - 0.001 &&
     edit.volume === 1 &&
