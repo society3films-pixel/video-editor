@@ -1,4 +1,5 @@
 import { checkClipFraming } from "../../editor/framing-check.util";
+import { planFramingWithLearning } from "../../editor/framing-learning.util";
 import { ClipperFramingReport, type FramingReportEntry } from "../preview/clipper-framing-report.component";
 import React, { useMemo, useState } from "react";
 import { Box, Text } from "@chakra-ui/react";
@@ -142,6 +143,26 @@ export const ClipperSessionPreviewPanel: React.FC<ClipperSessionPreviewPanelProp
           onFix={(clipIndex) => {
             setFramingReport(null);
             openFramingEditor(clipIndex);
+          }}
+          onAutoFixAll={async () => {
+            if (!DEFAULT_FRAMING_FORMAT) return 0;
+            let count = 0;
+            for (const entry of framingReport) {
+              const source = getClipEditorSourceForClip(entry.clipIndex, DEFAULT_FRAMING_FORMAT.id);
+              const faces = source?.frameContext.faceCache?.sortedSamples();
+              if (!source || !faces) continue;
+              const plan = planFramingWithLearning(source.framingTrack, {
+                aiShotBoundaries: source.aiShotBoundaries,
+                faceSamples: faces,
+                clipSegments: source.clip.segments,
+                outputAspect: source.outputSize.width / Math.max(1, source.outputSize.height),
+                duration: source.duration,
+              });
+              if (!plan.fixedShots.length) continue;
+              await saveClipFramingTrack(source.clip, plan.track);
+              count += plan.fixedShots.length;
+            }
+            return count;
           }}
         />
       ) : null}

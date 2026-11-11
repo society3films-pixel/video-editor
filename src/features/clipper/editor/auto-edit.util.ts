@@ -108,7 +108,7 @@ const SPLIT_SHARE_THRESHOLD = 0.5;
 const MIN_TWO_PERSON_SAMPLES = 3;
 
 /** Maps a range-source time to clip-local time, or null when it falls outside the clip. */
-function rangeToLocal(segments: readonly ClipperClipSegmentWindow[], time: number): number | null {
+export function rangeToLocal(segments: readonly ClipperClipSegmentWindow[], time: number): number | null {
   let offset = 0;
   for (const segment of segments) {
     if (time >= segment.startSec && time < segment.endSec) return offset + (time - segment.startSec);

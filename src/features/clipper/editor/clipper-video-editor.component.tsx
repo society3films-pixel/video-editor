@@ -84,6 +84,7 @@ import { ClipperCaptionExtras } from "./clipper-caption-extras.component";
 import { PreviewSounds } from "./preview-sounds.util";
 import { exportToPremiere } from "./premiere-export.util";
 import { measureClipColor } from "./color-measure.util";
+import { learnFromFraming } from "./framing-learning.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -795,6 +796,15 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     try {
       if (current.framing && framingChanged && onSaveFraming) {
         await onSaveFraming(current.framing);
+        const faces = source?.frameContext.faceCache?.sortedSamples();
+        if (source && faces) {
+          learnFromFraming(current.framing, {
+            aiShotBoundaries: source.aiShotBoundaries,
+            faceSamples: faces,
+            clipSegments: source.clip.segments,
+            outputAspect: source.outputSize.width / Math.max(1, source.outputSize.height),
+          });
+        }
       }
       if (clipMode) {
         appToast.success("Framing saved", "Preview, the render queue and every format now use it.");
