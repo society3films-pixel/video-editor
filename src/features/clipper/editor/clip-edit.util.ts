@@ -14,6 +14,8 @@
 import type { ClipHook } from "./hook.util";
 import type { ClipInsert } from "./broll.util";
 import type { StabilizeSettings } from "./stabilize.util";
+import type { VoiceCleanupSettings } from "./voice-cleanup.util";
+import type { BeatPulse } from "./beat-sync.util";
 import { isColorGradeActive, type ColorGrade } from "../engine/render/color-grade.util";
 import type { ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
 import type { ClipperCaptionPosition, ClipperCaptionSize } from "../settings/settings.util";
@@ -86,6 +88,10 @@ export interface ClipEdit {
   colorGrade?: ColorGrade | null;
   /** Remove camera shake when saving. */
   stabilize?: StabilizeSettings | null;
+  /** Rumble, background noise and level clean-up for the voice. */
+  voiceCleanup?: VoiceCleanupSettings | null;
+  /** Small zoom pulse on the music's beats (see beat-sync.util). */
+  beatPulse?: BeatPulse | null;
 }
 
 export interface ClipCaptionStyle {
@@ -331,7 +337,9 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     !edit.bleeps?.length &&
     !edit.hook &&
     !edit.inserts?.length &&
-    !edit.stabilize
+    !edit.stabilize &&
+    !(edit.voiceCleanup && (edit.voiceCleanup.denoise || edit.voiceCleanup.compress)) &&
+    !edit.beatPulse?.beats.length
   );
 }
 

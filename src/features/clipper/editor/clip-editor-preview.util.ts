@@ -1,4 +1,5 @@
 import { drawClipperFrame, resolveClipperFrameGeometry } from "../engine/render/index";
+import { beatPulseZoom } from "./beat-sync.util";
 import { activeInserts, pauseIdlePreviewInserts, previewInsertFrame } from "./broll.util";
 import type { ClipperFrameContext } from "../engine/render/index";
 import {
@@ -79,7 +80,9 @@ export function drawEditorPreviewFrame(
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, size.width, size.height);
   const segment = findSegmentAt(edit.segments, localTime);
-  const zoom = segment?.zoom ?? 1;
+  // Beats are on the saved video's clock, which starts with the hook (if any).
+  const hookLength = edit.hook ? edit.hook.end - edit.hook.start : 0;
+  const zoom = (segment?.zoom ?? 1) * beatPulseZoom(edit.beatPulse, sourceToOutputTime(edit.segments, localTime) + hookLength);
   if (zoom > 1) {
     // Same transform the renderer uses, so punch-ins preview exactly.
     const rect = punchInRect(size.width, size.height, zoom, segment?.zoomCenter);

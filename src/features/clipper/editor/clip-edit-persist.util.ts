@@ -62,6 +62,19 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
     cover: parseCover(value.cover),
+    voiceCleanup:
+      value.voiceCleanup && typeof value.voiceCleanup === "object"
+        ? { denoise: value.voiceCleanup.denoise === true, compress: value.voiceCleanup.compress === true }
+        : null,
+    beatPulse:
+      value.beatPulse && Array.isArray(value.beatPulse.beats)
+        ? {
+            beats: value.beatPulse.beats.filter(isFiniteNumber),
+            strength: isFiniteNumber(value.beatPulse.strength) ? Math.min(0.1, Math.max(0.005, value.beatPulse.strength)) : 0.03,
+            every: value.beatPulse.every === 2 ? 2 : 1,
+            bpm: isFiniteNumber(value.beatPulse.bpm) ? value.beatPulse.bpm : 0,
+          }
+        : null,
     stabilize:
       value.stabilize && isFiniteNumber(value.stabilize.strength)
         ? { strength: Math.min(1, Math.max(0, value.stabilize.strength)) }

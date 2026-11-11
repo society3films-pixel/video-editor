@@ -22,6 +22,8 @@ import { loadEditorAsset } from "./editor-assets.util";
 import { hookDuration, renderSegmentsFor } from "./hook.util";
 import { activeInserts, loadInsertMedia } from "./broll.util";
 import { analyzeStabilization, correctionAt } from "./stabilize.util";
+import { VoiceCleanup } from "./voice-cleanup.util";
+import { beatPulseZoom } from "./beat-sync.util";
 
 export interface RenderClipEditOptions {
   /** Stream the MP4 straight to disk. Omit to render into memory. */
@@ -203,7 +205,7 @@ export async function renderClipEdit(
               drawFrame(
                 ctx,
                 sample,
-                segment.zoom ?? 1,
+                (segment.zoom ?? 1) * beatPulseZoom(edit.beatPulse, timestamp),
                 segment.zoomCenter,
                 stabilizePath ? { ...correctionAt(stabilizePath, sample.timestamp), zoom: stabilizePath.zoom } : undefined,
               );
@@ -242,6 +244,7 @@ export async function renderClipEdit(
       let writtenFrames = 0;
       let outputSampleRate = 0;
       let mixExtras: ReturnType<typeof createAudioExtrasMixer> | null = null;
+      let cleanup: VoiceCleanup | null = null;
 
       let offset = 0;
       for (const segment of segments) {
@@ -289,6 +292,10 @@ export async function renderClipEdit(
             }
           }
 
+          if (edit.voiceCleanup && (edit.voiceCleanup.denoise || edit.voiceCleanup.compress)) {
+            cleanup ??= new VoiceCleanup(edit.voiceCleanup, sampleRate);
+            cleanup.process(planar, channels, frameCount);
+          }
           mixExtras?.(planar, channels, frameCount, firstOutputTime);
 
           // Audio stays contiguous across cuts: timestamps follow the frames already written.

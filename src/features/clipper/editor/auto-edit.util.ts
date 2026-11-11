@@ -38,7 +38,14 @@ export interface PauseCutOptions {
   leadSec: number;
   tailSec: number;
   removeFillers: boolean;
+  /** Times where the speaker changes; gaps there are cut tighter (conversation pacing). */
+  turnBoundaries?: readonly number[];
 }
+
+/** Longest silence kept at a change of speaker, and the padding there. */
+const TURN_MAX_PAUSE_SEC = 0.15;
+const TURN_LEAD_SEC = 0.05;
+const TURN_TAIL_SEC = 0.08;
 
 export const DEFAULT_PAUSE_CUT_OPTIONS: PauseCutOptions = {
   maxPauseSec: 0.45,
@@ -71,21 +78,27 @@ export function planPauseCuts(
   const speech = spoken.filter((word) => !(options.removeFillers && isFillerWord(word.text)));
   if (speech.length === 0 || duration <= 0) return null;
 
-  // Merge words into speech runs, splitting wherever the silence is too long.
-  const runs: Array<{ start: number; end: number }> = [];
+  // Merge words into speech runs, splitting wherever the silence is too long (shorter at a
+  // change of speaker, so back-and-forth conversation keeps its pace).
+  const turns = options.turnBoundaries ?? [];
+  const turnInGap = (from: number, to: number) => turns.some((t) => t > from - 0.05 && t < to + 0.05);
+  const runs: Array<{ start: number; end: number; turnBefore: boolean }> = [];
   for (const word of [...speech].sort((a, b) => a.start - b.start)) {
     const last = runs[runs.length - 1];
-    if (last && word.start - last.end <= options.maxPauseSec) last.end = Math.max(last.end, word.end);
-    else runs.push({ start: word.start, end: word.end });
+    const turn = last ? turnInGap(last.end, word.start) : false;
+    const limit = turn ? TURN_MAX_PAUSE_SEC : options.maxPauseSec;
+    if (last && word.start - last.end <= limit) last.end = Math.max(last.end, word.end);
+    else runs.push({ start: word.start, end: word.end, turnBefore: turn });
   }
 
   // Pad each run and clamp so padded runs never overlap.
   const segments: ClipEditSegment[] = [];
   runs.forEach((run, index) => {
     const previous = segments[segments.length - 1];
-    let start = Math.max(0, run.start - options.leadSec);
+    let start = Math.max(0, run.start - (run.turnBefore ? TURN_LEAD_SEC : options.leadSec));
     const nextStart = runs[index + 1]?.start ?? Infinity;
-    const end = Math.min(duration, run.end + options.tailSec, nextStart - options.leadSec / 2);
+    const tail = runs[index + 1]?.turnBefore ? TURN_TAIL_SEC : options.tailSec;
+    const end = Math.min(duration, run.end + tail, nextStart - options.leadSec / 2);
     if (previous && start < previous.end) start = previous.end;
     if (end - start >= MIN_SEGMENT_SEC) segments.push({ id: createEditId("seg"), start, end });
   });
@@ -317,6 +330,8 @@ export interface AutoEditOptions {
   hookTitle: boolean;
   levelVolume: boolean;
   highlightKeywords: boolean;
+  /** Tighter cuts where the speaker changes (needs who's talking, from the Framing tab). */
+  tightenTurns: boolean;
 }
 
 export const DEFAULT_AUTO_EDIT_OPTIONS: AutoEditOptions = {
@@ -326,6 +341,7 @@ export const DEFAULT_AUTO_EDIT_OPTIONS: AutoEditOptions = {
   hookTitle: true,
   levelVolume: true,
   highlightKeywords: true,
+  tightenTurns: true,
 };
 
 export interface AutoEditInputs {
@@ -365,7 +381,11 @@ export function applyAutoEdit(
   let next: ClipEdit = { ...edit };
 
   if (options.cutPauses) {
-    const plan = planPauseCuts(inputs.words, inputs.duration);
+    const speakers = options.tightenTurns ? (next.framing?.speakers ?? []) : [];
+    const plan = planPauseCuts(inputs.words, inputs.duration, {
+      ...DEFAULT_PAUSE_CUT_OPTIONS,
+      turnBoundaries: speakers.slice(1).map((span) => span.start),
+    });
     if (plan && plan.segments.length > 0) {
       next = { ...next, segments: plan.segments };
       summary.removedSec = plan.removedSec;

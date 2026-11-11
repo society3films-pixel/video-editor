@@ -46,6 +46,12 @@ export const ClipperAutoEditPanel: React.FC<ClipperAutoEditPanelProps> = ({
       unavailable: noTranscript,
     },
     {
+      key: "tightenTurns",
+      label: "Tighten conversation",
+      description: "With two people, cuts the pauses where the speaker changes extra short (finds who's talking first).",
+      unavailable: hasTranscript ? undefined : noTranscript,
+    },
+    {
       key: "fixFraming",
       label: "Fix framing",
       description: "Switches shots where two people don't fit to AI-tracked split screen, and screen recordings with a small webcam face to Screen + face.",

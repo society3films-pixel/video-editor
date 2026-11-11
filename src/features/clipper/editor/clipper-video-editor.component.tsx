@@ -656,18 +656,26 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   const autoEditFaceCache = source?.frameContext.faceCache ?? null;
 
   const runAutoEdit = useCallback(async () => {
-    const current = editRef.current;
+    let current = editRef.current;
     if (!current || autoEditRunning) return;
     videoRef.current?.pause();
     setAutoEditRunning(true);
     try {
       const options: AutoEditOptions = clipMode
-        ? { cutPauses: false, fixFraming: autoEditOptions.fixFraming, punchIns: false, hookTitle: false, levelVolume: false, highlightKeywords: false }
+        ? { cutPauses: false, fixFraming: autoEditOptions.fixFraming, punchIns: false, hookTitle: false, levelVolume: false, highlightKeywords: false, tightenTurns: false }
         : autoEditOptions;
       let levelGain: number | null = null;
       if (options.levelVolume && result) {
         const measured = await measureLevelGain(await resolveSourceFile(result, projectId)).catch(() => null);
         levelGain = measured?.gain ?? null;
+      }
+      // Tighter turns need to know who's talking: find out once if two people are tracked.
+      if (options.tightenTurns && options.cutPauses && current?.framing && !current.framing.speakers?.length && source && autoEditFaceCache) {
+        const twoPeople = autoEditFaceCache.sortedSamples().filter((sample) => sample.faces.length >= 2).length >= 10;
+        if (twoPeople) {
+          const speakers = await detectSpeakers(source.rangeFile, autoEditFaceCache.sortedSamples(), source.clip.segments, autoEditWords, duration).catch(() => []);
+          if (speakers.length > 1) current = { ...current, framing: { ...current.framing, speakers } };
+        }
       }
       const { edit: next, summary } = applyAutoEdit(
         current,

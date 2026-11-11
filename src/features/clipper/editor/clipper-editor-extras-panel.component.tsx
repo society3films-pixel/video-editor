@@ -16,7 +16,10 @@ function describeCorrection(c: ColorCorrection): string {
   return `Auto: brightness ${pct(c.brightness)}, contrast ${pct(c.contrast)}, saturation ${pct(c.saturation)}, ${cast}.`;
 }
 import type { WordCue } from "../lib/media/transcription-export.util";
-import { pickHookLocally, pickHookWithAi } from "./hook.util";
+import { hookDuration, pickHookLocally, pickHookWithAi } from "./hook.util";
+import { loadEditorAsset } from "./editor-assets.util";
+import { decodeAudioFile } from "./audio-extras.util";
+import { beatsOnTimeline, detectBeats } from "./beat-sync.util";
 import { describeAiChoice, resolveAiChoice } from "./ai-editor/ai-choice.util";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
@@ -68,6 +71,31 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
   const bar = edit.progressBar ?? null;
   const cover = edit.cover ?? null;
   const hook = edit.hook ?? null;
+  const [beatBusy, setBeatBusy] = useState(false);
+  const [beatNote, setBeatNote] = useState<string | null>(null);
+  const toggleBeatPulse = async (on: boolean) => {
+    if (!on || !edit.music) {
+      onChange((current) => ({ ...current, beatPulse: null }));
+      return;
+    }
+    setBeatBusy(true);
+    setBeatNote(null);
+    try {
+      const file = await loadEditorAsset(edit.music.assetId);
+      if (!file) throw new Error("The music file is no longer saved; pick it again.");
+      const length = getOutputDuration(edit.segments) + hookDuration(edit) + 1;
+      const audio = await decodeAudioFile(file, edit.music.startSec, length);
+      const found = detectBeats(audio);
+      if (!found) throw new Error("Couldn't find a steady beat in this song.");
+      const songLength = audio.channels[0]!.length / audio.sampleRate;
+      const beats = beatsOnTimeline(found.beats, 0, songLength, length);
+      onChange((current) => ({ ...current, beatPulse: { beats, strength: 0.03, every: 1, bpm: found.bpm } }));
+    } catch (error) {
+      setBeatNote(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBeatBusy(false);
+    }
+  };
   const grade = edit.colorGrade ?? null;
   const [measuring, setMeasuring] = useState(false);
   const [colorNote, setColorNote] = useState<string | null>(null);
@@ -470,6 +498,48 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
               />
               Lower the music while someone talks
             </label>
+            <label style={checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={Boolean(edit.beatPulse)}
+                disabled={beatBusy}
+                onChange={(e) => void toggleBeatPulse(e.target.checked)}
+                style={{ accentColor: clipperTheme.accent }}
+              />
+              {beatBusy ? "Finding the beat…" : edit.beatPulse ? `Pulse on the beat (${Math.round(edit.beatPulse.bpm)} BPM)` : "Pulse the picture on the beat"}
+            </label>
+            {edit.beatPulse ? (
+              <HStack gap={3}>
+                <Box flex={1}>
+                  <SliderRow
+                    label="Pulse"
+                    value={edit.beatPulse.strength}
+                    min={0.01}
+                    max={0.08}
+                    step={0.005}
+                    display={`${(edit.beatPulse.strength * 100).toFixed(1)}%`}
+                    onChange={(strength) => onChange((current) => (current.beatPulse ? { ...current, beatPulse: { ...current.beatPulse, strength } } : current))}
+                  />
+                </Box>
+                <select
+                  value={edit.beatPulse.every}
+                  onChange={(e) => {
+                    const every = (Number(e.target.value) === 2 ? 2 : 1) as 1 | 2;
+                    onChange((current) => (current.beatPulse ? { ...current, beatPulse: { ...current.beatPulse, every } } : current));
+                  }}
+                  style={{ ...fieldStyle, width: "auto", padding: "2px 6px" }}
+                  aria-label="Pulse frequency"
+                >
+                  <option value={1}>Every beat</option>
+                  <option value={2}>Every other beat</option>
+                </select>
+              </HStack>
+            ) : null}
+            {beatNote ? (
+              <Text fontSize="xs" color={theme.text.muted}>
+                {beatNote}
+              </Text>
+            ) : null}
             <Text fontSize="xs" color={theme.text.muted}>
               Music is mixed in when you save. Use music you have the rights to.
             </Text>
@@ -484,6 +554,30 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
             {musicError}
           </Text>
         ) : null}
+      </Section>
+
+      <Section title="Voice">
+        <label style={checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={Boolean(edit.voiceCleanup?.denoise)}
+            onChange={(e) => onChange((current) => ({ ...current, voiceCleanup: { compress: current.voiceCleanup?.compress ?? false, denoise: e.target.checked } }))}
+            style={{ accentColor: clipperTheme.accent }}
+          />
+          Reduce background noise and rumble
+        </label>
+        <label style={checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={Boolean(edit.voiceCleanup?.compress)}
+            onChange={(e) => onChange((current) => ({ ...current, voiceCleanup: { denoise: current.voiceCleanup?.denoise ?? false, compress: e.target.checked } }))}
+            style={{ accentColor: clipperTheme.accent }}
+          />
+          Even out loud and quiet words
+        </label>
+        <Text fontSize="xs" color={theme.text.muted}>
+          Applied when you save; the preview plays the original sound.
+        </Text>
       </Section>
 
       <Section title="Sound effects">
