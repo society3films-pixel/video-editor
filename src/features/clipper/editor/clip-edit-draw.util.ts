@@ -1,4 +1,4 @@
-import { getFadeFactor, type ClipEdit, type ClipTextOverlay } from "./clip-edit.util";
+import { getFadeFactor, type ClipEdit, type ClipProgressBar, type ClipTextOverlay } from "./clip-edit.util";
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -75,6 +75,15 @@ function drawTextOverlay(ctx: Ctx2D, overlay: ClipTextOverlay, width: number, he
  * Draws text overlays and the fade-to-black on top of an already drawn frame. Shared by the
  * live preview canvas and the renderer so the preview matches the saved file.
  */
+export function drawProgressBar(ctx: Ctx2D, bar: ClipProgressBar, progress: number, width: number, height: number): void {
+  const thickness = Math.max(2, Math.round(height * bar.thickness));
+  const y = bar.position === "top" ? 0 : height - thickness;
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(0, y, width, thickness);
+  ctx.fillStyle = bar.color;
+  ctx.fillRect(0, y, width * Math.min(1, Math.max(0, progress)), thickness);
+}
+
 export function drawClipEditOverlays(
   ctx: Ctx2D,
   edit: ClipEdit,
@@ -88,6 +97,7 @@ export function drawClipEditOverlays(
       drawTextOverlay(ctx, overlay, width, height);
     }
   }
+  if (edit.progressBar) drawProgressBar(ctx, edit.progressBar, outputTime / Math.max(1e-6, outputDuration), width, height);
   const fade = getFadeFactor(edit, outputTime, outputDuration);
   if (fade < 1) {
     ctx.fillStyle = `rgba(0,0,0,${1 - fade})`;

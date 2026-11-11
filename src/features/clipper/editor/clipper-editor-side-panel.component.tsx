@@ -4,6 +4,7 @@ import { Plus, Trash2, Volume2, VolumeX } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
+import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.component";
 import {
   formatEditorTime,
   type ClipEdit,
@@ -324,6 +325,8 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
           </Text>
         ) : null}
       </Section>
+
+      <ClipperEditorExtrasPanel edit={edit} onChange={onChange} />
 
       <Section title="Fades">
         <SliderRow

@@ -1,5 +1,13 @@
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
-import { MIN_SEGMENT_SEC, type ClipEdit, type ClipEditSegment, type ClipTextOverlay } from "./clip-edit.util";
+import {
+  MIN_SEGMENT_SEC,
+  type ClipEdit,
+  type ClipEditSegment,
+  type ClipMusic,
+  type ClipProgressBar,
+  type ClipSoundEffects,
+  type ClipTextOverlay,
+} from "./clip-edit.util";
 
 /**
  * The part of a clip edit saved with an edited export. Framing is not included: it belongs to
@@ -44,5 +52,38 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     textOverlays,
     captionGroups,
     captionsVisible: typeof value.captionsVisible === "boolean" ? value.captionsVisible : null,
+    music: parseMusic(value.music),
+    sfx: parseSfx(value.sfx),
+    progressBar: parseProgressBar(value.progressBar),
+  };
+}
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+function parseMusic(raw: unknown): ClipMusic | null {
+  const value = raw as Partial<ClipMusic> | null | undefined;
+  if (!value || typeof value.assetId !== "string") return null;
+  return {
+    assetId: value.assetId,
+    name: typeof value.name === "string" ? value.name : "Music",
+    volume: isFiniteNumber(value.volume) ? clamp01(value.volume) : 0.25,
+    duck: value.duck !== false,
+    startSec: isFiniteNumber(value.startSec) ? Math.max(0, value.startSec) : 0,
+  };
+}
+
+function parseSfx(raw: unknown): ClipSoundEffects | null {
+  const value = raw as Partial<ClipSoundEffects> | null | undefined;
+  if (!value || typeof value !== "object") return null;
+  return { cuts: value.cuts === true, punchIns: value.punchIns === true, volume: isFiniteNumber(value.volume) ? clamp01(value.volume) : 0.6 };
+}
+
+function parseProgressBar(raw: unknown): ClipProgressBar | null {
+  const value = raw as Partial<ClipProgressBar> | null | undefined;
+  if (!value || typeof value !== "object") return null;
+  return {
+    position: value.position === "top" ? "top" : "bottom",
+    color: typeof value.color === "string" && /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : "#ffd400",
+    thickness: isFiniteNumber(value.thickness) ? Math.min(0.03, Math.max(0.002, value.thickness)) : 0.008,
   };
 }

@@ -16,7 +16,9 @@ import { createMediabunnyInput } from "../lib/media/mediabunny-file-source.util"
 import { EncodeBackpressure } from "../lib/media/encode-backpressure.util";
 import { assertExportAudioSupported, exportAudioConfig } from "../lib/media/video-frame-effect-audio.util";
 import { drawClipEditOverlays, punchInRect } from "./clip-edit-draw.util";
-import { getFadeFactor, getOutputDuration, type ClipEdit } from "./clip-edit.util";
+import { getFadeFactor, getOutputDuration, soundEffectsActive, type ClipEdit } from "./clip-edit.util";
+import { createAudioExtrasMixer, decodeAudioFile, soundEffectEvents, type DecodedAudio } from "./audio-extras.util";
+import { loadEditorAsset } from "./editor-assets.util";
 
 export interface RenderClipEditOptions {
   /** Stream the MP4 straight to disk. Omit to render into memory. */
@@ -84,6 +86,15 @@ export async function renderClipEdit(
       output.addAudioTrack(audioSource);
     }
 
+    let music: DecodedAudio | null = null;
+    if (edit.music && audioSource) {
+      const musicFile = await loadEditorAsset(edit.music.assetId);
+      if (!musicFile) throw new Error(`The music file "${edit.music.name}" is no longer saved on this computer. Pick it again in the Audio section.`);
+      music = await decodeAudioFile(musicFile, edit.music.startSec, outputDuration + 1);
+    }
+    const effects = soundEffectsActive(edit) && edit.sfx ? { events: soundEffectEvents(segments, edit.sfx), volume: edit.sfx.volume } : null;
+    const hasExtras = Boolean(music) || Boolean(effects?.events.length);
+
     const onAbort = () => void output.cancel();
     signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -142,6 +153,7 @@ export async function renderClipEdit(
       const sink = new AudioBufferSink(audioTrack);
       let writtenFrames = 0;
       let outputSampleRate = 0;
+      let mixExtras: ReturnType<typeof createAudioExtrasMixer> | null = null;
 
       let offset = 0;
       for (const segment of segments) {
@@ -150,6 +162,17 @@ export async function renderClipEdit(
           const { buffer, timestamp } = wrapped;
           const sampleRate = buffer.sampleRate;
           if (!outputSampleRate) outputSampleRate = sampleRate;
+          if (hasExtras && !mixExtras) {
+            mixExtras = createAudioExtrasMixer(
+              {
+                outputDuration,
+                fades: edit,
+                music: music && edit.music ? { audio: music, volume: edit.music.volume, duck: edit.music.duck } : null,
+                effects,
+              },
+              sampleRate,
+            );
+          }
           const from = Math.max(0, Math.round((segment.start - timestamp) * sampleRate));
           const to = Math.min(buffer.length, Math.round((segment.end - timestamp) * sampleRate));
           const frameCount = to - from;
@@ -173,6 +196,8 @@ export async function renderClipEdit(
               dest[i] = Math.max(-1, Math.min(1, source[i] * gain));
             }
           }
+
+          mixExtras?.(planar, channels, frameCount, firstOutputTime);
 
           // Audio stays contiguous across cuts: timestamps follow the frames already written.
           const audioSample = new AudioSample({

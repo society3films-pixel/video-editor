@@ -58,6 +58,46 @@ export interface ClipEdit {
   captionsVisible: boolean | null;
   /** Draft of the clip's framing track; null when the source video isn't available. */
   framing: ClipFramingTrack | null;
+  /** Background music mixed under the voice. */
+  music?: ClipMusic | null;
+  /** Generated sound effects on cuts and punch-ins. */
+  sfx?: ClipSoundEffects | null;
+  /** A bar along the edge that fills up as the clip plays. */
+  progressBar?: ClipProgressBar | null;
+}
+
+export interface ClipMusic {
+  /** Key of the audio file in the editor asset store (see editor-assets.util). */
+  assetId: string;
+  name: string;
+  /** Music level, 0..1 of full scale. */
+  volume: number;
+  /** Lower the music while someone is talking. */
+  duck: boolean;
+  /** Where in the song to start, in seconds. */
+  startSec: number;
+}
+
+export interface ClipSoundEffects {
+  /** A whoosh where the edit jumps (cut out pauses or parts). */
+  cuts: boolean;
+  /** A low hit where a punch-in starts. */
+  punchIns: boolean;
+  volume: number;
+}
+
+export interface ClipProgressBar {
+  position: "top" | "bottom";
+  color: string;
+  /** Bar thickness as a fraction of the video height. */
+  thickness: number;
+}
+
+export const DEFAULT_PROGRESS_BAR: ClipProgressBar = { position: "bottom", color: "#ffd400", thickness: 0.008 };
+export const DEFAULT_SOUND_EFFECTS: ClipSoundEffects = { cuts: true, punchIns: true, volume: 0.6 };
+
+export function soundEffectsActive(edit: Pick<ClipEdit, "sfx">): boolean {
+  return Boolean(edit.sfx && (edit.sfx.cuts || edit.sfx.punchIns) && edit.sfx.volume > 0);
 }
 
 let idCounter = 0;
@@ -243,23 +283,17 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     edit.volume === 1 &&
     edit.fadeInSec === 0 &&
     edit.fadeOutSec === 0 &&
-    edit.textOverlays.length === 0
+    edit.textOverlays.length === 0 &&
+    !edit.music &&
+    !soundEffectsActive(edit) &&
+    !edit.progressBar
   );
 }
 
 /** True when nothing differs from `baseline` (captions, cuts, audio, fades, text). Framing is compared separately. */
 export function isClipEditUnchanged(edit: ClipEdit, sourceDuration: number): boolean {
   if (clipEditChangesCaptions(edit)) return false;
-  const [only] = edit.segments;
-  return (
-    edit.segments.length === 1 &&
-    only.start <= 0.001 &&
-    only.end >= sourceDuration - 0.001 &&
-    edit.volume === 1 &&
-    edit.fadeInSec === 0 &&
-    edit.fadeOutSec === 0 &&
-    edit.textOverlays.length === 0
-  );
+  return !clipEditNeedsPostProcess(edit, sourceDuration);
 }
 
 export function formatEditorTime(seconds: number): string {

@@ -75,6 +75,7 @@ import { requestEdit, type AiProvider } from "./ai-editor/ai-editor-providers.ut
 import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
 import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
 import { detectSpeakers } from "./speaker-detect.util";
+import { loadEditorAsset } from "./editor-assets.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -280,6 +281,28 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   }, []);
 
   // One loop drives playback rules (skip gaps and cuts), preview volume and canvas drawing.
+  // Background music preview: an <audio> element kept in step with the edit's output time.
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null);
+  const musicAssetId = edit?.music?.assetId ?? null;
+  useEffect(() => {
+    if (!musicAssetId) return;
+    let url: string | null = null;
+    let cancelled = false;
+    void loadEditorAsset(musicAssetId).then((file) => {
+      if (!file || cancelled) return;
+      url = URL.createObjectURL(file);
+      const audio = new Audio(url);
+      audio.loop = true;
+      musicAudioRef.current = audio;
+    });
+    return () => {
+      cancelled = true;
+      musicAudioRef.current?.pause();
+      musicAudioRef.current = null;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [musicAssetId]);
+
   useEffect(() => {
     let frame = 0;
     let lastDrawn = { time: -1, edit: null as ClipEdit | null, context: null as unknown };
@@ -312,6 +335,19 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         video.muted = gain <= 0;
         video.volume = Math.min(1, Math.max(0, gain));
         setCurrentTime(local);
+        const music = musicAudioRef.current;
+        if (music) {
+          if (video.paused || !current.music) {
+            if (!music.paused) music.pause();
+          } else {
+            const outputT = sourceToOutputTime(current.segments, local);
+            const songLength = Number.isFinite(music.duration) && music.duration > 0 ? music.duration : Infinity;
+            const desired = (current.music.startSec + outputT) % songLength;
+            if (Math.abs(music.currentTime - desired) > 0.3) music.currentTime = desired;
+            music.volume = Math.min(1, Math.max(0, current.music.volume * getFadeFactor(current, outputT, total)));
+            if (music.paused) void music.play().catch(() => {});
+          }
+        }
 
         const context = previewContextRef.current;
         const ctx = canvas?.getContext("2d");
