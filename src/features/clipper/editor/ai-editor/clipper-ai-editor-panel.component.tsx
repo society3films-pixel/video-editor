@@ -13,6 +13,7 @@ import {
   type AiProviderStatus,
 } from "./ai-editor-providers.util";
 import { removeAnthropicKey, saveAnthropicKey, verifyAnthropicKey } from "./ai-editor-anthropic.util";
+import { getLocalAiUrl, LOCAL_AI_PRESETS, listLocalModels, setLocalAiUrl } from "./ai-editor-local.util";
 import { loadAiChoice, saveAiChoice } from "./ai-choice.util";
 
 export interface AiEditorTurn {
@@ -97,6 +98,24 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
       setProviders((list) => list?.map((item) => (item.provider === "anthropic" ? { ...item, hasKey: true } : item)) ?? list);
       setModelsVersion((value) => value + 1);
     } catch (error) {
+      setKeyError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const [localUrl, setLocalUrlDraft] = useState(getLocalAiUrl);
+  const connectLocal = async () => {
+    setKeyBusy(true);
+    setKeyError(null);
+    setLocalAiUrl(localUrl);
+    try {
+      const ids = await listLocalModels();
+      if (ids.length === 0) throw new Error("The server answered but has no models. Pull one first, e.g. ollama pull qwen3:14b");
+      setProviders((list) => list?.map((item) => (item.provider === "local" ? { ...item, hasKey: true } : item)) ?? list);
+      setModelsVersion((value) => value + 1);
+    } catch (error) {
+      setProviders((list) => list?.map((item) => (item.provider === "local" ? { ...item, hasKey: false } : item)) ?? list);
       setKeyError(error instanceof Error ? error.message : String(error));
     } finally {
       setKeyBusy(false);
@@ -233,6 +252,38 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
                 ? `Or switch to ${providers.filter((item) => item.provider !== "anthropic").map((item) => AI_PROVIDER_LABEL[item.provider]).join(" or ")} above.`
                 : "You can also use an OpenRouter or Groq key from Settings → Transcription."}
             </Text>
+          </VStack>
+        ) : null}
+        {provider === "local" ? (
+          <VStack align="stretch" gap={2} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+            <Text fontSize="xs">
+              Runs a model on this computer: free, private and offline. Install Ollama (ollama.com) and run{" "}
+              <code>ollama pull qwen3:14b</code> (or another model that fits your GPU), or start LM Studio's local
+              server. Bigger models follow edit instructions better.
+            </Text>
+            <HStack gap={2}>
+              <input
+                value={localUrl}
+                onChange={(event) => setLocalUrlDraft(event.target.value)}
+                style={fieldStyle}
+                aria-label="Local AI server address"
+              />
+              <Button size="sm" onClick={() => void connectLocal()} disabled={keyBusy}>
+                {keyBusy ? <Spinner size="xs" /> : providerReady ? "Reconnect" : "Connect"}
+              </Button>
+            </HStack>
+            <HStack gap={3}>
+              {LOCAL_AI_PRESETS.map((preset) => (
+                <Box key={preset.label} as="button" fontSize="xs" color={clipperTheme.accentGlow} cursor="pointer" onClick={() => setLocalUrlDraft(preset.url)}>
+                  {preset.label}
+                </Box>
+              ))}
+            </HStack>
+            {keyError ? (
+              <Text fontSize="xs" color={theme.status.danger}>
+                {keyError}
+              </Text>
+            ) : null}
           </VStack>
         ) : null}
         {provider === "anthropic" && providerReady ? (

@@ -37,7 +37,7 @@ export async function resolveAiChoice(): Promise<AiChoice> {
   if (saved && ready.includes(saved.provider)) return saved;
   const provider = ready[0];
   if (!provider) {
-    throw new Error("No AI is set up yet. Open a clip's editor, go to the AI tab and add an Anthropic (Claude) key.");
+    throw new Error("No AI is set up yet. Open a clip's editor, go to the AI tab and add an Anthropic (Claude) key or connect a local model (Ollama / LM Studio).");
   }
   const model = defaultModel(provider, await listModels(provider));
   if (!model) throw new Error(`No usable models were found for ${AI_PROVIDER_LABEL[provider]}.`);

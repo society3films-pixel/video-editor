@@ -4,6 +4,7 @@ macro_rules! invoke_handler {
         tauri::generate_handler![
             crate::commands::frontend::frontend_ready,
             crate::commands::frontend::frontend_startup_log,
+            crate::commands::local_ai::local_ai_request,
             crate::commands::app_updates::get_app_name,
             crate::commands::app_updates::get_app_version,
             crate::commands::app_updates::check_for_app_update,
