@@ -60,7 +60,7 @@ import {
 } from "./clip-editor-preview.util";
 import { ClipperEditorTimeline } from "./clipper-editor-timeline.component";
 import { ClipperEditorSidePanel } from "./clipper-editor-side-panel.component";
-import { ClipperEditorCaptionsPanel, ClipperEditorFramingPanel } from "./clipper-editor-source-panels.component";
+import { ClipperEditorCaptionsPanel, ClipperEditorFramingPanel, type SpeakerDetectStatus } from "./clipper-editor-source-panels.component";
 import { resolveSourceFile, saveEditedClipperExport } from "./save-edited-export.util";
 import {
   applyAutoEdit,
@@ -74,6 +74,7 @@ import { ClipperAiEditorPanel, type AiEditorTurn } from "./ai-editor/clipper-ai-
 import { requestEdit, type AiProvider } from "./ai-editor/ai-editor-providers.util";
 import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
 import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
+import { detectSpeakers } from "./speaker-detect.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -421,6 +422,28 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     },
     [localNow, shotBoundaries, updateFraming],
   );
+
+  const [speakerStatus, setSpeakerStatus] = useState<SpeakerDetectStatus>({ state: "idle" });
+  const detectSpeakersNow = useCallback(async () => {
+    if (!source || !faceCache) {
+      setSpeakerStatus({ state: "error", message: "Face tracking isn't available for this clip yet." });
+      return;
+    }
+    setSpeakerStatus({ state: "running", ratio: 0 });
+    try {
+      const spans = await detectSpeakers(source.rangeFile, faceCache.sortedSamples(), source.clip.segments, source.clip.words, duration, {
+        onProgress: (ratio) => setSpeakerStatus({ state: "running", ratio }),
+      });
+      updateFraming((track) => ({ ...track, speakers: spans }), { coalesce: false });
+      setSpeakerStatus(
+        spans.length
+          ? { state: "idle" }
+          : { state: "error", message: "Couldn't tell who's talking. Both faces need to be visible while people speak." },
+      );
+    } catch (error) {
+      setSpeakerStatus({ state: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }, [duration, faceCache, source, updateFraming]);
 
   const forceSplit = useCallback(() => {
     const video = videoRef.current;
@@ -1080,6 +1103,9 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onForceSplit={forceSplit}
                 sideBySide={outputWidth > outputHeight}
                 splitTrackedHere={splitTrackedHere}
+                speakerTurns={edit.framing?.speakers?.length ?? 0}
+                speakerStatus={speakerStatus}
+                onDetectSpeakers={() => void detectSpeakersNow()}
                 onAddKeyframe={addKeyframe}
                 onRemoveKeyframe={(id) => updateFraming((track) => removeFramingKeyframe(track, id))}
                 onSeek={(time) => {

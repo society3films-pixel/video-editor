@@ -22,6 +22,7 @@ import {
 import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
 import type { FaceSampleCache } from "../reframe/cache.util";
 import { splitFaceTracksFor, trackedPositionAt } from "./split-tracking.util";
+import { firstPanelShare, speakerEmphasisAt } from "./speaker-emphasis.util";
 import type { ClipperClipSegmentWindow } from "../segmentation/segmentation.types";
 
 export interface ClipperFramePanelGeometry {
@@ -90,12 +91,8 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
   const resolved = formatDef.mode === "crop" ? resolveClipperLayoutRender(render.smartCropAnalysis, formatDef.id, source, t) : undefined;
   const regions = formatDef.mode === "crop" ? cachedLayoutRegions(render.smartCropAnalysis) : [];
   const branch = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
-  const override = render.framing?.track.keyframes.length
-    ? evaluateClipFraming(
-        render.framing,
-        render.segments?.length ? sourceTimeToLocalTime(render.segments, t) : Math.max(0, t),
-      )
-    : undefined;
+  const localT = render.segments?.length ? sourceTimeToLocalTime(render.segments, t) : Math.max(0, t);
+  const override = render.framing?.track.keyframes.length ? evaluateClipFraming(render.framing, localT) : undefined;
   if (isForcedSplit(override) && formatDef.mode === "crop") {
     let faces: Array<{ x: number; y: number } | null> | undefined;
     if (override!.splitFollow && render.faceCache) {
@@ -104,7 +101,10 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
       const right = trackedPositionAt(tracks.right, t);
       faces = override!.splitSwap ? [right, left] : [left, right];
     }
-    return { mode: "split", panels: forcedSplitLayout(override!.split!, source, output, faces) };
+    const share = override!.splitFollow && override!.splitEmphasis
+      ? firstPanelShare(speakerEmphasisAt(render.framing!.track.speakers, localT), Boolean(override!.splitSwap))
+      : 0.5;
+    return { mode: "split", panels: forcedSplitLayout(override!.split!, source, output, faces, share) };
   }
   const plannedLayout = override?.singleShot && branch.plannedLayout?.mode === "split"
     ? { ...branch.plannedLayout, mode: "single-crop" as const, viewports: [branch.plannedLayout.viewports[0]!] }

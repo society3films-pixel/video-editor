@@ -1,3 +1,4 @@
+import type { SpeakerSpan } from "./speaker-emphasis.util";
 import type { FrameEffectSize } from "../../lib/media/video-frame-effect.util";
 import { cropRectForCentroid } from "../reframe/crop.util";
 import type { ClipperCropRect } from "../types/reframe.types";
@@ -24,6 +25,8 @@ export interface ClipperFramingValue {
   splitFollow?: boolean;
   /** AI-tracked split: put the right-hand person in the first panel instead of the left. */
   splitSwap?: boolean;
+  /** AI-tracked split: grow the panel of whoever is talking (needs `ClipFramingTrack.speakers`). */
+  splitEmphasis?: boolean;
 }
 
 /** One panel of a forced split screen: a camera centred on `x`/`y` (0..1 of the source). */
@@ -52,6 +55,8 @@ export interface ClipFramingKeyframe extends ClipperFramingValue {
 export interface ClipFramingTrack {
   keyframes: ClipFramingKeyframe[];
   extraShotBoundaries: number[];
+  /** Who is talking when (clip-local), from mouth movement; used by `splitEmphasis`. */
+  speakers?: SpeakerSpan[];
 }
 
 /** What the renderer receives: the track plus the AI shot boundaries for this clip. */
@@ -127,6 +132,7 @@ function toValue(keyframe: ClipFramingKeyframe): ClipperFramingValue {
     value.split = keyframe.split!.map((panel) => ({ ...panel }));
     if (keyframe.splitFollow) value.splitFollow = true;
     if (keyframe.splitSwap) value.splitSwap = true;
+    if (keyframe.splitEmphasis) value.splitEmphasis = true;
   }
   return value;
 }
@@ -240,15 +246,15 @@ function evenFloor(value: number): number {
 }
 
 /** Where the two panels go: stacked on portrait/square outputs, side by side on landscape. */
-export function forcedSplitDestinations(output: FrameEffectSize): SplitPanelLayout["destination"][] {
+export function forcedSplitDestinations(output: FrameEffectSize, firstShare = 0.5): SplitPanelLayout["destination"][] {
   if (output.width > output.height) {
-    const left = evenFloor(output.width / 2);
+    const left = evenFloor(output.width * firstShare);
     return [
       { x: 0, y: 0, width: left, height: output.height },
       { x: left, y: 0, width: output.width - left, height: output.height },
     ];
   }
-  const top = evenFloor(output.height / 2);
+  const top = evenFloor(output.height * firstShare);
   return [
     { x: 0, y: 0, width: output.width, height: top },
     { x: 0, y: top, width: output.width, height: output.height - top },
@@ -287,8 +293,9 @@ export function forcedSplitLayout(
   source: FrameEffectSize,
   output: FrameEffectSize,
   faces?: SplitPanelFaces,
+  firstShare = 0.5,
 ): SplitPanelLayout[] {
-  return forcedSplitDestinations(output).map((destination, index) => {
+  return forcedSplitDestinations(output, firstShare).map((destination, index) => {
     const panel = panels[index] ?? panels[0]!;
     const face = faces?.[index];
     if (!face) return { destination, source: splitPanelCrop(panel, destination, source) };

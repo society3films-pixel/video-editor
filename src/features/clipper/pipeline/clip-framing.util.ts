@@ -79,6 +79,7 @@ export function clipFramingSignature(framingMap: ClipFramingMap | undefined, cli
   if (isFramingTrackEmpty(track)) return null;
   return [
     track!.extraShotBoundaries,
-    track!.keyframes.map((k) => [k.t, k.mode, k.x, k.y, k.zoom, k.singleShot, k.split ?? null, k.splitFollow ?? false, k.splitSwap ?? false]),
+    track!.keyframes.map((k) => [k.t, k.mode, k.x, k.y, k.zoom, k.singleShot, k.split ?? null, k.splitFollow ?? false, k.splitSwap ?? false, k.splitEmphasis ?? false]),
+    track!.speakers ?? null,
   ];
 }

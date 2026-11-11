@@ -137,6 +137,11 @@ export const ClipperEditorCaptionsPanel: React.FC<CaptionsPanelProps> = ({
 
 // ---- Framing ----------------------------------------------------------------------------------
 
+export type SpeakerDetectStatus =
+  | { state: "idle" }
+  | { state: "running"; ratio: number }
+  | { state: "error"; message: string };
+
 interface FramingPanelProps {
   shot: { index: number; start: number; end: number; count: number };
   /** Framing at the playhead; undefined = AI framing. */
@@ -154,6 +159,10 @@ interface FramingPanelProps {
   sideBySide: boolean;
   /** AI-tracked split: whether two people are tracked at the playhead. */
   splitTrackedHere: boolean;
+  /** Speaker turns detected for this clip (0 = not detected yet). */
+  speakerTurns: number;
+  speakerStatus: SpeakerDetectStatus;
+  onDetectSpeakers: () => void;
   onAddKeyframe: () => void;
   onRemoveKeyframe: (id: string) => void;
   onSeek: (localTime: number) => void;
@@ -177,6 +186,9 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
   onForceSplit,
   sideBySide,
   splitTrackedHere,
+  speakerTurns,
+  speakerStatus,
+  onDetectSpeakers,
   onAddKeyframe,
   onRemoveKeyframe,
   onSeek,
@@ -262,6 +274,40 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
                   : "Two people aren't detected at this moment, so the panels use their manual positions here."
                 : "Drag inside a panel to reposition it. Changes apply to this shot only."}
             </Text>
+            {current.splitFollow ? (
+              <VStack align="stretch" gap={1}>
+                <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(current.splitEmphasis)}
+                    onChange={(e) => {
+                      update({ splitEmphasis: e.target.checked });
+                      if (e.target.checked && speakerTurns === 0 && speakerStatus.state !== "running") onDetectSpeakers();
+                    }}
+                    style={{ accentColor: clipperTheme.accent }}
+                  />
+                  Grow the panel of whoever's talking
+                </label>
+                {current.splitEmphasis || speakerStatus.state !== "idle" ? (
+                  <HStack gap={2} flexWrap="wrap">
+                    <Text fontSize="xs" color={speakerStatus.state === "error" ? theme.status.danger : theme.text.muted}>
+                      {speakerStatus.state === "running"
+                        ? `Watching who's talking… ${Math.round(speakerStatus.ratio * 100)}%`
+                        : speakerStatus.state === "error"
+                          ? speakerStatus.message
+                          : speakerTurns
+                            ? `${speakerTurns} speaker turn${speakerTurns === 1 ? "" : "s"} found from mouth movement.`
+                            : "Not checked yet."}
+                    </Text>
+                    {speakerStatus.state !== "running" ? (
+                      <OutlinedActionButton {...smallButton} onClick={onDetectSpeakers}>
+                        {speakerTurns ? "Check again" : "Find who's talking"}
+                      </OutlinedActionButton>
+                    ) : null}
+                  </HStack>
+                ) : null}
+              </VStack>
+            ) : null}
             {current.split!.slice(0, 2).map((panel, index) => (
               <VStack key={index} align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
                 <Text fontSize="xs" fontWeight="semibold">
