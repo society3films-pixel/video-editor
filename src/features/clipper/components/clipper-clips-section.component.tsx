@@ -44,6 +44,7 @@ export const ClipperClipsSection: React.FC<ClipperClipsSectionProps> = ({
   onResetAutoParts,
   autoPartsResegmenting = false,
   rangeTrimmedVideoUrl,
+  getRangeFile,
   rangeDurationSec,
   getRangeFrameContext,
   onManualEditorOpen,
@@ -130,7 +131,7 @@ export const ClipperClipsSection: React.FC<ClipperClipsSectionProps> = ({
             <ClipperAiMcpEmptyState />
           )}
 
-          <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} />
+          <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} getRangeFile={getRangeFile} />
           <ClipperAiMcpPanel clipCount={listPreviews.length} projectId={projectId} />
         </Box>
       ) : (

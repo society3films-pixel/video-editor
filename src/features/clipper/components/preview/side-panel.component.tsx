@@ -42,6 +42,7 @@ export function ClipperPreviewSidePanel({
   openingInStudio = false,
   onFixFraming,
   onCheckFraming,
+  getRangeFile,
 }: ClipperPreviewSidePanelProps) {
   const listPreviews = activeClipPreviewsForMode(
     clipSourceMode,
@@ -213,6 +214,7 @@ export function ClipperPreviewSidePanel({
           onResetAutoParts={onResetAutoParts}
           autoPartsResegmenting={autoPartsResegmenting}
           rangeTrimmedVideoUrl={state.rangeTrimmedVideoUrl}
+          getRangeFile={getRangeFile}
           rangeDurationSec={state.clipDuration ?? 0}
           getRangeFrameContext={getRangeFrameContext}
           onManualEditorOpen={pausePreview}

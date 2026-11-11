@@ -8,11 +8,13 @@ import { fetchClipperClips, saveClipperClips } from "../persistence/clipper-clip
 import { describeAiChoice, resolveAiChoice, type AiChoice } from "../editor/ai-editor/ai-choice.util";
 import { clipPicksToPayload, pickClipsWithAi, type PickedClip } from "../editor/ai-editor/ai-clip-pick.util";
 import { writeYoutubeChapters } from "../editor/chapters.util";
+import { findPerformanceMomentsInFile, momentsToClips } from "../editor/performance-moments.util";
 import { buildPaperEdit, paperEditToClip, type PaperEdit } from "../editor/ai-editor/ai-paper-edit.util";
 
 interface ClipperAiPickPanelProps {
   projectId: string;
   rangeWords: readonly WordCue[];
+  getRangeFile?: () => File | null;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -25,7 +27,31 @@ const inputStyle: React.CSSProperties = {
 };
 
 /** "Pick clips with AI": the chosen model reads the transcript and saves the best moments as AI clips. */
-export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({ projectId, rangeWords }) => {
+export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({ projectId, rangeWords, getRangeFile }) => {
+  const [perfBusy, setPerfBusy] = useState(false);
+  const [perfNote, setPerfNote] = useState<string | null>(null);
+  const findPerformances = async () => {
+    const file = getRangeFile?.();
+    if (!file) {
+      setPerfNote("The video isn't ready yet.");
+      return;
+    }
+    setPerfBusy(true);
+    setPerfNote(null);
+    try {
+      const moments = await findPerformanceMomentsInFile(file, rangeWords, { count: 10 });
+      if (!moments.length) throw new Error("No songs or instrumental parts found in this video.");
+      const existing = await fetchClipperClips(projectId, "ai");
+      const first = existing.reduce((max, clip) => Math.max(max, clip.index + 1), 0);
+      await saveClipperClips(projectId, "ai", [...existing, ...momentsToClips(moments, first)]);
+      const highlights = moments.filter((m) => m.kind === "highlight").length;
+      setPerfNote(`Added ${highlights} performance highlight${highlights === 1 ? "" : "s"} and ${moments.length - highlights} explain-then-play clip${moments.length - highlights === 1 ? "" : "s"} to the AI clips.`);
+    } catch (reason) {
+      setPerfNote(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setPerfBusy(false);
+    }
+  };
   const { theme } = useClipperUi();
   const [open, setOpen] = useState(true);
   const [choice, setChoice] = useState<AiChoice | null>(null);
@@ -164,6 +190,23 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({ projectI
               {error}
             </Text>
           ) : null}
+          <VStack align="stretch" gap={1} pt={2} borderTop="1px solid" borderColor="rgba(255,255,255,0.06)">
+            <Text fontSize="xs" fontWeight="semibold">
+              Performances
+            </Text>
+            <Text fontSize="xs" color={theme.text.muted}>
+              Finds the songs in the video and adds the strongest 20-40 s of each (ending between phrases, ranked by the
+              crowd's reaction), plus clips where they explain something and then play it. Works offline.
+            </Text>
+            <Button size="xs" variant="outline" alignSelf="flex-start" onClick={() => void findPerformances()} disabled={perfBusy || !getRangeFile}>
+              {perfBusy ? <Spinner size="xs" /> : null} Find performance moments
+            </Button>
+            {perfNote ? (
+              <Text fontSize="xs" color={theme.text.muted}>
+                {perfNote}
+              </Text>
+            ) : null}
+          </VStack>
           <VStack align="stretch" gap={1} pt={2} borderTop="1px solid" borderColor="rgba(255,255,255,0.06)">
             <Text fontSize="xs" fontWeight="semibold">
               Long-form edit

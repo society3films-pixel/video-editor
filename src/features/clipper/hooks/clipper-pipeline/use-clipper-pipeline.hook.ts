@@ -140,6 +140,8 @@ export function useClipperPipeline({ project, token, loaded }: UseClipperPipelin
     getClipEditorSource: (result: ClipperFormatResult) =>
       resolveClipEditorSource(sessionRef.current, settings, result),
     /** Source + render context for a clip (no export yet), previewed in `formatId`. */
+    /** The trimmed range video (for sound analysis in Preview), once prepared. */
+    getRangeFile: (): File | null => sessionRef.current?.rangeTrimmedFile ?? null,
     getClipEditorSourceForClip: (clipIndex: number, formatId: string) => {
       const session = sessionRef.current;
       const clip = session ? findClipByIndex(getActiveClips(session), clipIndex) : undefined;

@@ -134,6 +134,7 @@ export const ClipperSessionPreviewPanel: React.FC<ClipperSessionPreviewPanelProp
         settingsDrawerVisible={settingsDrawerVisible}
         onFixFraming={openFramingEditor}
         onCheckFraming={checkFraming}
+        getRangeFile={() => session.getRangeFile()}
       />
       {framingReport ? (
         <ClipperFramingReport
