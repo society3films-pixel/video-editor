@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Box, Button, Flex, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
-import { Film, Pause, Play, RotateCcw, Scissors, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { Clapperboard, Film, Pause, Play, RotateCcw, Scissors, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { appToast } from "../../../shared/utils/toast.service";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
@@ -82,6 +82,7 @@ import { checkClipFraming } from "./framing-check.util";
 import { ClipperFramingIssues } from "./clipper-framing-issues.component";
 import { ClipperCaptionExtras } from "./clipper-caption-extras.component";
 import { PreviewSounds } from "./preview-sounds.util";
+import { exportToPremiere } from "./premiere-export.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -749,6 +750,39 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     [applyEdit, autoEditWords, duration, openedResult, result, source],
   );
 
+  const exportPremiere = useCallback(async () => {
+    const current = editRef.current;
+    if (!current || saving || !result) return;
+    videoRef.current?.pause();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setSaving(true);
+    setSaveProgress(0);
+    try {
+      if (current.framing && framingChanged && onSaveFraming) await onSaveFraming(current.framing);
+      const groups = current.captionGroups ?? source?.frameContext.captionGroups ?? [];
+      const outcome = await exportToPremiere(projectId, result, current, source ?? null, groups, {
+        signal: controller.signal,
+        onProgress: setSaveProgress,
+      });
+      appToast.success(
+        "Premiere Pro project exported",
+        `${outcome.files.join(", ")}${outcome.folderHint && outcome.folderHint !== outcome.files[0] ? ` in ${outcome.folderHint}` : ""}. ` +
+          "In Premiere: File → Import the .xml, then import the .srt and drag it onto the timeline for captions." +
+          (outcome.usedCleanRender ? "" : " The project's source video wasn't loaded, so the video still has its burned-in captions."),
+      );
+    } catch (error) {
+      if ((error instanceof DOMException || error instanceof Error) && error.name === "AbortError") {
+        appToast.info("Export cancelled");
+      } else {
+        appToast.error("Could not export to Premiere Pro", error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      abortRef.current = null;
+      setSaving(false);
+    }
+  }, [framingChanged, onSaveFraming, projectId, result, saving, source]);
+
   const save = useCallback(async () => {
     const current = editRef.current;
     if (!current || saving) return;
@@ -958,6 +992,16 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 </option>
               ))}
             </select>
+          ) : null}
+          {!clipMode ? (
+            <OutlinedActionButton
+              onClick={() => void exportPremiere()}
+              disabled={!edit || saving || outputDuration <= 0}
+              startIcon={<Clapperboard size={16} />}
+              title="An editable Premiere Pro timeline (XML) with every cut as its own clip, captions as an SRT file, and the music"
+            >
+              Premiere Pro
+            </OutlinedActionButton>
           ) : null}
           <OutlinedActionButton onClick={requestClose} disabled={saving} startIcon={<X size={16} />}>
             Close
