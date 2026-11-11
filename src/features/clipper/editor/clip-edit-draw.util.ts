@@ -1,4 +1,5 @@
 import { getFadeFactor, type ClipEdit, type ClipProgressBar, type ClipTextOverlay } from "./clip-edit.util";
+import { activeInserts, drawInsert, type ClipInsert } from "./broll.util";
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -122,7 +123,12 @@ export function drawClipEditOverlays(
   outputDuration: number,
   width: number,
   height: number,
-  options: { coverPreview?: boolean; textTime?: number } = {},
+  options: {
+    coverPreview?: boolean;
+    textTime?: number;
+    /** Media for a B-roll insert at its own time (null = not ready: skipped). */
+    insertFrame?: (insert: ClipInsert, insertTime: number) => { media: CanvasImageSource; width: number; height: number } | null;
+  } = {},
 ): void {
   if (options.coverPreview && edit.cover && Math.abs(outputTime - edit.cover.time) < 0.05) {
     drawCoverTitle(ctx, edit.cover.title, width, height);
@@ -130,6 +136,12 @@ export function drawClipEditOverlays(
   }
   // Text overlays are timed on the main edit; a hook played first shifts them (textTime).
   const textTime = options.textTime ?? outputTime;
+  if (options.insertFrame) {
+    for (const insert of activeInserts(edit.inserts, textTime)) {
+      const frame = options.insertFrame(insert, textTime - insert.start);
+      if (frame) drawInsert(ctx, frame.media, frame.width, frame.height, insert, textTime - insert.start, width, height);
+    }
+  }
   for (const overlay of edit.textOverlays) {
     if (textTime >= overlay.start && textTime < overlay.end) {
       drawTextOverlay(ctx, overlay, width, height);

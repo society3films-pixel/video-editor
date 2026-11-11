@@ -57,6 +57,17 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
     cover: parseCover(value.cover),
+    inserts: (Array.isArray(value.inserts) ? value.inserts : [])
+      .filter((i) => i && typeof i.assetId === "string" && isFiniteNumber(i.start) && isFiniteNumber(i.end) && i.end > i.start)
+      .map((i) => ({
+        id: typeof i.id === "string" ? i.id : `insert-${i.assetId}-${i.start}`,
+        assetId: i.assetId,
+        name: typeof i.name === "string" ? i.name : "B-roll",
+        kind: i.kind === "video" ? ("video" as const) : ("image" as const),
+        start: Math.max(0, i.start),
+        end: i.end,
+        layout: i.layout === "full" || i.layout === "pip" ? i.layout : ("top" as const),
+      })),
     hook:
       value.hook && isFiniteNumber(value.hook.start) && isFiniteNumber(value.hook.end) && value.hook.end > value.hook.start
         ? { start: Math.max(0, value.hook.start), end: Math.min(duration, value.hook.end), text: typeof value.hook.text === "string" ? value.hook.text : "" }

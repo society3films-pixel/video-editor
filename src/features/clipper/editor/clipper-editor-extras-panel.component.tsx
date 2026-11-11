@@ -1,13 +1,21 @@
 import React, { useRef, useState } from "react";
 import { Box, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
-import { Image, Music, Sparkles, Trash2 } from "lucide-react";
+import { Film, Image, Music, Sparkles, Trash2 } from "lucide-react";
+import { INSERT_LAYOUT_LABEL, type ClipInsert, type ClipInsertLayout } from "./broll.util";
 import type { WordCue } from "../lib/media/transcription-export.util";
 import { pickHookLocally, pickHookWithAi } from "./hook.util";
 import { describeAiChoice, resolveAiChoice } from "./ai-editor/ai-choice.util";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
-import { DEFAULT_PROGRESS_BAR, DEFAULT_SOUND_EFFECTS, formatEditorTime, type ClipEdit } from "./clip-edit.util";
+import {
+  createEditId,
+  DEFAULT_PROGRESS_BAR,
+  DEFAULT_SOUND_EFFECTS,
+  formatEditorTime,
+  getOutputDuration,
+  type ClipEdit,
+} from "./clip-edit.util";
 import { saveEditorAsset } from "./editor-assets.util";
 import { Section, SliderRow, fieldStyle } from "./clipper-editor-side-panel.component";
 
@@ -44,6 +52,34 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
   const bar = edit.progressBar ?? null;
   const cover = edit.cover ?? null;
   const hook = edit.hook ?? null;
+  const inserts = edit.inserts ?? [];
+  const brollRef = useRef<HTMLInputElement>(null);
+  const [brollError, setBrollError] = useState<string | null>(null);
+  const outputDuration = getOutputDuration(edit.segments);
+
+  const addBroll = async (file: File | undefined) => {
+    if (!file) return;
+    setBrollError(null);
+    const kind = file.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name) ? "video" : "image";
+    try {
+      const assetId = await saveEditorAsset(file);
+      const start = Math.min(outputTime, Math.max(0, outputDuration - 0.5));
+      const insert: ClipInsert = {
+        id: createEditId("broll"),
+        assetId,
+        name: file.name,
+        kind,
+        start,
+        end: Math.min(outputDuration, start + 3),
+        layout: "top",
+      };
+      onChange((current) => ({ ...current, inserts: [...(current.inserts ?? []), insert] }));
+    } catch (error) {
+      setBrollError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const updateInsert = (id: string, patch: Partial<ClipInsert>) =>
+    onChange((current) => ({ ...current, inserts: (current.inserts ?? []).map((item) => (item.id === id ? { ...item, ...patch } : item)) }));
   const [hookBusy, setHookBusy] = useState(false);
   const [hookNote, setHookNote] = useState<{ text: string; error?: boolean } | null>(null);
 
@@ -92,6 +128,68 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
 
   return (
     <VStack align="stretch" gap={3}>
+      <Section title="B-roll">
+        <input
+          ref={brollRef}
+          type="file"
+          accept="image/*,video/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            void addBroll(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <OutlinedActionButton h="32px" fontSize="xs" startIcon={<Film size={14} />} onClick={() => brollRef.current?.click()}>
+          Add image or video at the playhead
+        </OutlinedActionButton>
+        {inserts.map((insert) => (
+          <VStack key={insert.id} align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+            <HStack gap={2}>
+              <Box as="button" flex={1} textAlign="left" fontSize="xs" truncate title="Jump to it" cursor="pointer" onClick={() => onSeekOutput?.(insert.start + 0.01)}>
+                {insert.kind === "video" ? "🎞️" : "🖼️"} {insert.name}
+              </Box>
+              <OutlinedActionButton
+                h="26px"
+                px={2}
+                tone="danger"
+                aria-label="Remove B-roll"
+                onClick={() => onChange((current) => ({ ...current, inserts: (current.inserts ?? []).filter((item) => item.id !== insert.id) }))}
+              >
+                <Trash2 size={12} />
+              </OutlinedActionButton>
+            </HStack>
+            <HStack gap={2} fontSize="xs">
+              <OutlinedActionButton h="24px" px={2} fontSize="xs" onClick={() => updateInsert(insert.id, { start: Math.min(outputTime, insert.end - 0.3) })}>
+                Start here
+              </OutlinedActionButton>
+              <OutlinedActionButton h="24px" px={2} fontSize="xs" onClick={() => updateInsert(insert.id, { end: Math.max(outputTime, insert.start + 0.3) })}>
+                End here
+              </OutlinedActionButton>
+              <Text color={theme.text.muted}>
+                {formatEditorTime(insert.start)}–{formatEditorTime(insert.end)}
+              </Text>
+            </HStack>
+            <select
+              value={insert.layout}
+              onChange={(e) => updateInsert(insert.id, { layout: e.target.value as ClipInsertLayout })}
+              style={{ ...fieldStyle, padding: "2px 6px" }}
+              aria-label="B-roll layout"
+            >
+              {(Object.keys(INSERT_LAYOUT_LABEL) as ClipInsertLayout[]).map((layout) => (
+                <option key={layout} value={layout}>
+                  {INSERT_LAYOUT_LABEL[layout]}
+                </option>
+              ))}
+            </select>
+          </VStack>
+        ))}
+        {brollError ? (
+          <Text fontSize="xs" color={theme.status.danger}>
+            {brollError}
+          </Text>
+        ) : null}
+      </Section>
+
       <Section title="Hook">
         <Text fontSize="xs" color={theme.text.muted}>
           Plays a strong line from later in the clip first, as a teaser, then the clip from the start.

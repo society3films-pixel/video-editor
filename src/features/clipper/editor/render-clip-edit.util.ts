@@ -20,6 +20,7 @@ import { COVER_FIRST_FRAMES_SEC, getFadeFactor, getOutputDuration, soundEffectsA
 import { createAudioExtrasMixer, decodeAudioFile, soundEffectEvents, type DecodedAudio } from "./audio-extras.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { hookDuration, renderSegmentsFor } from "./hook.util";
+import { activeInserts, loadInsertMedia } from "./broll.util";
 
 export interface RenderClipEditOptions {
   /** Stream the MP4 straight to disk. Omit to render into memory. */
@@ -144,6 +145,7 @@ export async function renderClipEdit(
       }
     }
     const coverFirstFrames = coverCanvas && edit.cover?.firstFrames ? coverCanvas : null;
+    const insertMedia = edit.inserts?.length ? await loadInsertMedia(edit.inserts) : null;
 
     const onAbort = () => void output.cancel();
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -177,7 +179,17 @@ export async function renderClipEdit(
               ctx.drawImage(coverFirstFrames, 0, 0);
             } else {
               drawFrame(ctx, sample, segment.zoom ?? 1);
-              drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height, { textTime: timestamp - hookLength });
+              const textTime = timestamp - hookLength;
+              const insertFrames = new Map<string, { media: CanvasImageSource; width: number; height: number } | null>();
+              if (insertMedia) {
+                for (const insert of activeInserts(edit.inserts, textTime)) {
+                  insertFrames.set(insert.id, await insertMedia.frameFor(insert, textTime - insert.start));
+                }
+              }
+              drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height, {
+                textTime,
+                insertFrame: (insert) => insertFrames.get(insert.id) ?? null,
+              });
             }
 
             const outSample = new VideoSample(canvas, { timestamp, duration });
@@ -286,6 +298,7 @@ export async function renderClipEdit(
       throw error;
     } finally {
       signal?.removeEventListener("abort", onAbort);
+      insertMedia?.dispose();
     }
 
     const cover = coverCanvas ? await coverCanvas.convertToBlob({ type: "image/png" }) : undefined;

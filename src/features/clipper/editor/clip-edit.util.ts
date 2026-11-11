@@ -12,6 +12,7 @@
  *   draft of it in `framing`.
  */
 import type { ClipHook } from "./hook.util";
+import type { ClipInsert } from "./broll.util";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import {
   mergeShotBoundaries,
@@ -71,6 +72,8 @@ export interface ClipEdit {
   bleeps?: Array<{ start: number; end: number }>;
   /** A line played first as a teaser before the clip starts (see hook.util). */
   hook?: ClipHook | null;
+  /** B-roll images and videos over parts of the edit (see broll.util). */
+  inserts?: ClipInsert[];
 }
 
 export interface ClipCover {
@@ -308,7 +311,8 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     !edit.progressBar &&
     !edit.cover &&
     !edit.bleeps?.length &&
-    !edit.hook
+    !edit.hook &&
+    !edit.inserts?.length
   );
 }
 

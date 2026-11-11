@@ -384,7 +384,13 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         const context = previewContextRef.current;
         const ctx = canvas?.getContext("2d");
         const changed =
-          !video.paused || video.seeking || lastDrawn.time !== video.currentTime || lastDrawn.edit !== current || lastDrawn.context !== context;
+          !video.paused ||
+          video.seeking ||
+          lastDrawn.time !== video.currentTime ||
+          lastDrawn.edit !== current ||
+          lastDrawn.context !== context ||
+          // B-roll media loads and seeks on its own; keep drawing while paused over one.
+          Boolean(current.inserts?.length);
         if (ctx && canvas && changed) {
           drawEditorPreviewFrame(ctx, video, { width: canvas.width, height: canvas.height }, current, local, source, context);
           lastDrawn = { time: video.seeking ? -1 : video.currentTime, edit: current, context };

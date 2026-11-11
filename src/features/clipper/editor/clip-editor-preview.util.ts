@@ -1,4 +1,5 @@
 import { drawClipperFrame, resolveClipperFrameGeometry } from "../engine/render/index";
+import { activeInserts, pauseIdlePreviewInserts, previewInsertFrame } from "./broll.util";
 import type { ClipperFrameContext } from "../engine/render/index";
 import {
   findGapJumpTarget,
@@ -99,8 +100,11 @@ export function drawEditorPreviewFrame(
     ctx.fillRect(0, 0, size.width, size.height);
   } else {
     const total = getOutputDuration(edit.segments);
-    drawClipEditOverlays(ctx, edit, sourceToOutputTime(edit.segments, localTime), total, size.width, size.height, {
+    const outputTime = sourceToOutputTime(edit.segments, localTime);
+    if (edit.inserts?.length) pauseIdlePreviewInserts(activeInserts(edit.inserts, outputTime));
+    drawClipEditOverlays(ctx, edit, outputTime, total, size.width, size.height, {
       coverPreview: true,
+      insertFrame: (insert, insertTime) => previewInsertFrame(insert, insertTime, !video.paused, () => {}),
     });
   }
   ctx.restore();
