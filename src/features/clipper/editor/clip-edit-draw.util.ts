@@ -122,14 +122,16 @@ export function drawClipEditOverlays(
   outputDuration: number,
   width: number,
   height: number,
-  options: { coverPreview?: boolean } = {},
+  options: { coverPreview?: boolean; textTime?: number } = {},
 ): void {
   if (options.coverPreview && edit.cover && Math.abs(outputTime - edit.cover.time) < 0.05) {
     drawCoverTitle(ctx, edit.cover.title, width, height);
     return;
   }
+  // Text overlays are timed on the main edit; a hook played first shifts them (textTime).
+  const textTime = options.textTime ?? outputTime;
   for (const overlay of edit.textOverlays) {
-    if (outputTime >= overlay.start && outputTime < overlay.end) {
+    if (textTime >= overlay.start && textTime < overlay.end) {
       drawTextOverlay(ctx, overlay, width, height);
     }
   }

@@ -57,6 +57,10 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
     cover: parseCover(value.cover),
+    hook:
+      value.hook && isFiniteNumber(value.hook.start) && isFiniteNumber(value.hook.end) && value.hook.end > value.hook.start
+        ? { start: Math.max(0, value.hook.start), end: Math.min(duration, value.hook.end), text: typeof value.hook.text === "string" ? value.hook.text : "" }
+        : null,
     bleeps: Array.isArray(value.bleeps)
       ? value.bleeps.filter((b) => b && isFiniteNumber(b.start) && isFiniteNumber(b.end) && b.end > b.start).map((b) => ({ start: b.start, end: b.end }))
       : [],

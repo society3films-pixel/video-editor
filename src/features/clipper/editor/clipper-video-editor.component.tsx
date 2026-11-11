@@ -294,6 +294,17 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   }, []);
 
   // One loop drives playback rules (skip gaps and cuts), preview volume and canvas drawing.
+  // While set, playback is previewing the hook (which may sit in a cut part) before the clip.
+  const hookPreviewRef = useRef<{ end: number } | null>(null);
+  const previewHook = useCallback(() => {
+    const video = videoRef.current;
+    const hook = editRef.current?.hook;
+    if (!video || !hook) return;
+    hookPreviewRef.current = { end: hook.end };
+    video.currentTime = timeMapRef.current.toVideo(hook.start);
+    void video.play().catch(() => {});
+  }, []);
+
   // Background music preview: an <audio> element kept in step with the edit's output time.
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const musicAssetId = edit?.music?.assetId ?? null;
@@ -325,7 +336,15 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       const current = editRef.current;
       const map = timeMapRef.current;
       if (video && current) {
-        if (!video.paused) {
+        const hookPreview = hookPreviewRef.current;
+        if (hookPreview && !video.paused && map.toLocal(video.currentTime) >= hookPreview.end) {
+          // Hook played: continue from the start of the clip, as the saved video will.
+          hookPreviewRef.current = null;
+          video.currentTime = map.toVideo(current.segments[0]?.start ?? 0);
+        } else if (hookPreview && video.paused) {
+          hookPreviewRef.current = null;
+        }
+        if (!video.paused && !hookPreviewRef.current) {
           const gap = map.gapJump(video.currentTime);
           if (gap !== null) video.currentTime = gap;
           const local = map.toLocal(video.currentTime);
@@ -1120,6 +1139,9 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                   seek(outputToSourceTime(edit.segments, time));
                 }}
                 defaultCoverTitle={(openedResult ?? result)?.socialTitle ?? ""}
+                words={autoEditWords}
+                sourceDuration={duration}
+                onPreviewHook={previewHook}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />

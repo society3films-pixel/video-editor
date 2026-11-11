@@ -42,7 +42,7 @@ export function soundEffectEvents(segments: readonly ClipEditSegment[], options:
     const segment = segments[i]!;
     const previous = segments[i - 1];
     if (previous) {
-      const jumped = segment.start - previous.end > 0.05;
+      const jumped = Math.abs(segment.start - previous.end) > 0.05;
       const punched = (segment.zoom ?? 1) > 1.001 && (segment.zoom ?? 1) !== (previous.zoom ?? 1);
       const kind: SoundEffectKind | null = punched && options.punchIns ? "hit" : jumped && options.cuts ? "whoosh" : null;
       if (kind && offset - last >= MIN_EFFECT_GAP_SEC) {

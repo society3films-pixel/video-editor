@@ -41,6 +41,8 @@ export type AiEditOperation =
   | { op: "highlight_word"; line: number; word: string }
   | { op: "clear_highlights" }
   | { op: "add_emoji"; line: number; emoji: string }
+  | { op: "set_hook"; from_word: number; to_word: number }
+  | { op: "remove_hook" }
   | { op: "punch_in"; from_word: number; to_word: number; zoom?: number }
   | { op: "set_volume"; value: number }
   | { op: "set_fades"; in?: number; out?: number }
@@ -100,6 +102,8 @@ const OPS = new Set([
   "highlight_word",
   "clear_highlights",
   "add_emoji",
+  "set_hook",
+  "remove_hook",
   "punch_in",
   "set_volume",
   "set_fades",
@@ -147,7 +151,7 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
   const skipped: string[] = [];
   let next: ClipEdit = { ...edit };
   const order = (op: AiEditOperation["op"]) =>
-    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "clear_highlights", "highlight_keywords", "highlight_word", "add_emoji", "set_captions_visible", "add_text", "set_volume", "set_fades", "set_framing"].indexOf(op);
+    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "clear_highlights", "highlight_keywords", "highlight_word", "add_emoji", "set_captions_visible", "add_text", "set_hook", "remove_hook", "set_volume", "set_fades", "set_framing"].indexOf(op);
   const operations = [...plan.operations].sort((a, b) => order(a.op) - order(b.op));
   const wordText = (from: number, to: number) => {
     const text = words.slice(Math.min(from, to), Math.max(from, to) + 1).map((w) => w.text).join(" ");
@@ -264,6 +268,26 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
           if (!group.words[wordIndex]!.emphasis) next = { ...next, captionGroups: toggleWordEmphasis(groups, operation.line, wordIndex) };
           applied.push(`Highlighted “${group.words[wordIndex]!.text}”`);
         }
+        break;
+      }
+      case "set_hook": {
+        if (!isIndex(operation.from_word, words.length) || !isIndex(operation.to_word, words.length) || operation.to_word < operation.from_word) {
+          skipped.push("The hook referred to words that don't exist.");
+          break;
+        }
+        const start = Math.max(0, words[operation.from_word]!.start - 0.05);
+        const end = Math.min(duration, words[operation.to_word]!.end + 0.1);
+        if (end - start > 10) {
+          skipped.push("The hook was longer than 10 seconds.");
+          break;
+        }
+        next = { ...next, hook: { start, end, text: wordText(operation.from_word, operation.to_word) } };
+        applied.push(`Hook: “${wordText(operation.from_word, operation.to_word)}” plays first`);
+        break;
+      }
+      case "remove_hook": {
+        next = { ...next, hook: null };
+        applied.push("Removed the hook");
         break;
       }
       case "add_emoji": {

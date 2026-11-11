@@ -11,6 +11,7 @@
  *   Framing belongs to the clip (saved on the project, used by every format); the editor holds a
  *   draft of it in `framing`.
  */
+import type { ClipHook } from "./hook.util";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import {
   mergeShotBoundaries,
@@ -68,6 +69,8 @@ export interface ClipEdit {
   cover?: ClipCover | null;
   /** Clip-local time ranges where the sound is replaced by a bleep (swear words). */
   bleeps?: Array<{ start: number; end: number }>;
+  /** A line played first as a teaser before the clip starts (see hook.util). */
+  hook?: ClipHook | null;
 }
 
 export interface ClipCover {
@@ -304,7 +307,8 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     !soundEffectsActive(edit) &&
     !edit.progressBar &&
     !edit.cover &&
-    !edit.bleeps?.length
+    !edit.bleeps?.length &&
+    !edit.hook
   );
 }
 

@@ -1,6 +1,9 @@
 import React, { useRef, useState } from "react";
-import { Box, HStack, Text, VStack } from "@chakra-ui/react";
-import { Image, Music, Trash2 } from "lucide-react";
+import { Box, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
+import { Image, Music, Sparkles, Trash2 } from "lucide-react";
+import type { WordCue } from "../lib/media/transcription-export.util";
+import { pickHookLocally, pickHookWithAi } from "./hook.util";
+import { describeAiChoice, resolveAiChoice } from "./ai-editor/ai-choice.util";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
@@ -14,12 +17,24 @@ interface ExtrasPanelProps {
   outputTime: number;
   onSeekOutput?: (outputTime: number) => void;
   defaultCoverTitle?: string;
+  words?: readonly WordCue[];
+  sourceDuration?: number;
+  onPreviewHook?: () => void;
 }
 
 const checkboxLabel: React.CSSProperties = { fontSize: 12, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" };
 
 /** Music, sound effects and the progress bar: things added on top of the clip when it's saved. */
-export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({ edit, onChange, outputTime, onSeekOutput, defaultCoverTitle }) => {
+export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
+  edit,
+  onChange,
+  outputTime,
+  onSeekOutput,
+  defaultCoverTitle,
+  words = [],
+  sourceDuration = 0,
+  onPreviewHook,
+}) => {
   const { theme } = useClipperUi();
   const fileRef = useRef<HTMLInputElement>(null);
   const [musicError, setMusicError] = useState<string | null>(null);
@@ -28,6 +43,35 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({ edit, onC
   const sfx = edit.sfx ?? null;
   const bar = edit.progressBar ?? null;
   const cover = edit.cover ?? null;
+  const hook = edit.hook ?? null;
+  const [hookBusy, setHookBusy] = useState(false);
+  const [hookNote, setHookNote] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const findHook = async () => {
+    setHookBusy(true);
+    setHookNote(null);
+    try {
+      let picked = null;
+      let how = "picked from the transcript (offline)";
+      const choice = await resolveAiChoice().catch(() => null);
+      if (choice) {
+        try {
+          picked = await pickHookWithAi(choice, words, sourceDuration);
+          how = `picked by ${describeAiChoice(choice)}`;
+        } catch (error) {
+          how = `picked offline (${error instanceof Error ? error.message : String(error)})`;
+        }
+      }
+      picked ??= pickHookLocally(words, sourceDuration);
+      if (!picked) throw new Error("No line suits a hook (1.5-6.5 s, after the opening).");
+      onChange((current) => ({ ...current, hook: picked }));
+      setHookNote({ text: `Hook ${how}.` });
+    } catch (error) {
+      setHookNote({ text: error instanceof Error ? error.message : String(error), error: true });
+    } finally {
+      setHookBusy(false);
+    }
+  };
 
   const pickMusic = async (file: File | undefined) => {
     if (!file) return;
@@ -48,6 +92,40 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({ edit, onC
 
   return (
     <VStack align="stretch" gap={3}>
+      <Section title="Hook">
+        <Text fontSize="xs" color={theme.text.muted}>
+          Plays a strong line from later in the clip first, as a teaser, then the clip from the start.
+        </Text>
+        {hook ? (
+          <VStack align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+            <Text fontSize="xs">“{hook.text || "Selected line"}”</Text>
+            <Text fontSize="xs" color={theme.text.muted}>
+              {formatEditorTime(hook.start)}–{formatEditorTime(hook.end)} · adds {(hook.end - hook.start).toFixed(1)}s at the start
+            </Text>
+          </VStack>
+        ) : null}
+        <HStack gap={2} flexWrap="wrap">
+          <OutlinedActionButton h="28px" px={2} fontSize="xs" startIcon={hookBusy ? <Spinner size="xs" /> : <Sparkles size={13} />} onClick={() => void findHook()} disabled={hookBusy || words.length < 5}>
+            {hook ? "Find another" : "Find a hook"}
+          </OutlinedActionButton>
+          {hook ? (
+            <>
+              <OutlinedActionButton h="28px" px={2} fontSize="xs" onClick={onPreviewHook}>
+                Preview
+              </OutlinedActionButton>
+              <OutlinedActionButton h="28px" px={2} tone="danger" aria-label="Remove hook" onClick={() => onChange((current) => ({ ...current, hook: null }))}>
+                <Trash2 size={13} />
+              </OutlinedActionButton>
+            </>
+          ) : null}
+        </HStack>
+        {hookNote ? (
+          <Text fontSize="xs" color={hookNote.error ? theme.status.danger : theme.text.muted}>
+            {hookNote.text}
+          </Text>
+        ) : null}
+      </Section>
+
       <Section title="Cover">
         {cover ? (
           <>

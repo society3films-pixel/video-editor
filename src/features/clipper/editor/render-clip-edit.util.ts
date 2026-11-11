@@ -19,6 +19,7 @@ import { drawClipEditOverlays, drawCoverTitle, punchInRect } from "./clip-edit-d
 import { COVER_FIRST_FRAMES_SEC, getFadeFactor, getOutputDuration, soundEffectsActive, type ClipEdit } from "./clip-edit.util";
 import { createAudioExtrasMixer, decodeAudioFile, soundEffectEvents, type DecodedAudio } from "./audio-extras.util";
 import { loadEditorAsset } from "./editor-assets.util";
+import { hookDuration, renderSegmentsFor } from "./hook.util";
 
 export interface RenderClipEditOptions {
   /** Stream the MP4 straight to disk. Omit to render into memory. */
@@ -66,7 +67,10 @@ export async function renderClipEdit(
   const { outputSink, signal, onProgress } = options;
   throwIfAborted(signal);
 
-  const segments = edit.segments.filter((segment) => segment.end - segment.start > 0.001);
+  const mainSegments = edit.segments.filter((segment) => segment.end - segment.start > 0.001);
+  // The hook (if any) plays first; everything else is timed after it.
+  const segments = renderSegmentsFor(edit);
+  const hookLength = segments[0]?.id === "hook" ? hookDuration(edit) : 0;
   const outputDuration = getOutputDuration(segments);
   if (segments.length === 0 || outputDuration <= 0) {
     throw new Error("Nothing to render. Keep at least one part of the clip.");
@@ -112,11 +116,12 @@ export async function renderClipEdit(
     // Cover: the frame at the cover time with this edit's zoom and overlays, plus its title.
     let coverCanvas: OffscreenCanvas | null = null;
     if (edit.cover) {
-      const coverTime = Math.min(Math.max(0, edit.cover.time), Math.max(0, outputDuration - 0.01));
+      const mainDuration = getOutputDuration(mainSegments);
+      const coverTime = Math.min(Math.max(0, edit.cover.time), Math.max(0, mainDuration - 0.01));
       let offset = 0;
-      let segment = segments[segments.length - 1]!;
+      let segment = mainSegments[mainSegments.length - 1]!;
       let sourceTime = segment.end - 0.01;
-      for (const candidate of segments) {
+      for (const candidate of mainSegments) {
         const length = candidate.end - candidate.start;
         if (coverTime < offset + length) {
           segment = candidate;
@@ -131,7 +136,7 @@ export async function renderClipEdit(
           coverCanvas = new OffscreenCanvas(width, height);
           const coverCtx = coverCanvas.getContext("2d")!;
           drawFrame(coverCtx, sample, segment.zoom ?? 1);
-          drawClipEditOverlays(coverCtx, { ...edit, fadeInSec: 0, fadeOutSec: 0, progressBar: null }, coverTime, outputDuration, width, height);
+          drawClipEditOverlays(coverCtx, { ...edit, fadeInSec: 0, fadeOutSec: 0, progressBar: null }, coverTime, mainDuration, width, height);
           drawCoverTitle(coverCtx, edit.cover.title, width, height);
         } finally {
           sample.close();
@@ -172,7 +177,7 @@ export async function renderClipEdit(
               ctx.drawImage(coverFirstFrames, 0, 0);
             } else {
               drawFrame(ctx, sample, segment.zoom ?? 1);
-              drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height);
+              drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height, { textTime: timestamp - hookLength });
             }
 
             const outSample = new VideoSample(canvas, { timestamp, duration });

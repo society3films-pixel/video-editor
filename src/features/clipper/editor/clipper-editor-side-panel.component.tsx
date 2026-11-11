@@ -5,6 +5,7 @@ import { OutlinedActionButton } from "../../../shared/components/buttons/outline
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.component";
+import type { WordCue } from "../lib/media/transcription-export.util";
 import {
   formatEditorTime,
   type ClipEdit,
@@ -25,6 +26,10 @@ interface ClipperEditorSidePanelProps {
   onSeekOutput?: (outputTime: number) => void;
   /** Suggested cover title (the export's social title). */
   defaultCoverTitle?: string;
+  /** Transcript words (clip-local), for picking a hook. */
+  words?: readonly WordCue[];
+  sourceDuration?: number;
+  onPreviewHook?: () => void;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -259,6 +264,9 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   activeSegmentId = null,
   onSeekOutput,
   defaultCoverTitle,
+  words,
+  sourceDuration,
+  onPreviewHook,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -338,6 +346,9 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
         outputTime={outputTime}
         onSeekOutput={onSeekOutput}
         defaultCoverTitle={defaultCoverTitle}
+        words={words}
+        sourceDuration={sourceDuration}
+        onPreviewHook={onPreviewHook}
       />
 
       <Section title="Fades">
