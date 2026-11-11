@@ -224,7 +224,8 @@ export async function renderClipEdit(
           const channels = buffer.numberOfChannels;
           const planar = new Float32Array(frameCount * channels);
           const firstOutputTime = offset + (timestamp + from / sampleRate - segment.start);
-          const needsGain = edit.volume !== 1 || edit.fadeInSec > 0 || edit.fadeOutSec > 0;
+          const needsGain = edit.volume !== 1 || edit.fadeInSec > 0 || edit.fadeOutSec > 0 || Boolean(edit.bleeps?.length);
+          const bufferStart = timestamp + from / sampleRate;
 
           for (let channel = 0; channel < channels; channel++) {
             const source = buffer.getChannelData(channel).subarray(from, to);
@@ -236,7 +237,10 @@ export async function renderClipEdit(
             for (let i = 0; i < frameCount; i++) {
               const t = firstOutputTime + i / sampleRate;
               const gain = edit.volume * getFadeFactor(edit, t, outputDuration);
-              dest[i] = Math.max(-1, Math.min(1, source[i] * gain));
+              const sourceTime = bufferStart + i / sampleRate;
+              const bleeped = edit.bleeps?.some((range) => sourceTime >= range.start && sourceTime < range.end);
+              const value = bleeped ? Math.sin(2 * Math.PI * 1000 * sourceTime) * 0.3 : source[i];
+              dest[i] = Math.max(-1, Math.min(1, value * gain));
             }
           }
 

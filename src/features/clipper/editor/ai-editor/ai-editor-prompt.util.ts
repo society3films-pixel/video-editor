@@ -27,6 +27,7 @@ Operations (word numbers are the [n] indexes in the transcript; ranges are inclu
 - {"op":"highlight_keywords"}                      colour one key word in caption lines automatically
 - {"op":"highlight_word","line":k,"word":"..."}    colour this word of caption line k (keyword emphasis)
 - {"op":"clear_highlights"}                        remove all keyword colouring
+- {"op":"add_emoji","line":k,"emoji":"🔥"}          one fitting emoji that pops in above caption line k (use sparingly)
 - {"op":"punch_in","from_word":n,"to_word":m,"zoom":1.05-1.5}  zoom in for emphasis
 - {"op":"set_volume","value":0-2}                  1 = unchanged
 - {"op":"set_fades","in":seconds,"out":seconds}

@@ -80,6 +80,7 @@ import { loadEditorAsset } from "./editor-assets.util";
 import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "./caption-keywords.util";
 import { checkClipFraming } from "./framing-check.util";
 import { ClipperFramingIssues } from "./clipper-framing-issues.component";
+import { ClipperCaptionExtras } from "./clipper-caption-extras.component";
 
 interface ClipperVideoEditorProps {
   /**
@@ -1135,6 +1136,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 </Text>
               </VStack>
             ) : tab === "captions" ? (
+              <VStack align="stretch" gap={3}>
               <ClipperEditorCaptionsPanel
                 groups={captionGroups}
                 edited={edit.captionGroups !== null}
@@ -1166,6 +1168,14 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                   }))
                 }
               />
+              <ClipperCaptionExtras
+                edit={edit}
+                groups={captionGroups}
+                words={autoEditWords}
+                activeLine={captionGroups.findIndex((group) => currentTime >= group.start && currentTime < group.end)}
+                onChange={(updater) => applyEdit(updater)}
+              />
+              </VStack>
             ) : (
               <VStack align="stretch" gap={3}>
               <Section title="Framing check">

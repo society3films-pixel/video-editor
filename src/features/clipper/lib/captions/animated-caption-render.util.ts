@@ -1162,9 +1162,34 @@ function drawCaptionWordBlock(
       drawWordsPass(false);
       drawWordsPass(true);
     }
+    drawGroupEmoji(ctx, group, layout, width, timestamp);
   } finally {
     ctx.restore();
   }
+}
+
+/**
+ * The line's emoji (the first word that has one) above the caption block: pops in when its word
+ * is spoken, then bobs gently while the line is on screen.
+ */
+function drawGroupEmoji(ctx: CaptionContext, group: CaptionGroup, layout: CaptionLayout, width: number, timestamp: number): void {
+  const word = group.words.find((w) => w.emoji && !w.deleted);
+  if (!word?.emoji) return;
+  const since = timestamp - Math.max(group.start, word.start - 0.15);
+  if (since < 0) return;
+  const pop = Math.min(1, since / 0.22);
+  const scale = pop < 1 ? easeOutBack(pop) : 1;
+  const bob = Math.sin(since * 4) * layout.fontPx * 0.05;
+  const size = layout.fontPx * 1.5;
+  ctx.save();
+  ctx.globalAlpha *= Math.min(1, pop * 1.5);
+  ctx.translate(width / 2, layout.top - size * 0.65 + bob);
+  ctx.scale(scale, scale);
+  ctx.font = `${Math.round(size)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(word.emoji, 0, 0);
+  ctx.restore();
 }
 
 export function drawPhraseAnimatedCaption(

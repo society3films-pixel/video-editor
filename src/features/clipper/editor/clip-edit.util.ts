@@ -66,6 +66,8 @@ export interface ClipEdit {
   progressBar?: ClipProgressBar | null;
   /** Cover image (thumbnail) taken from a frame of the edited clip. */
   cover?: ClipCover | null;
+  /** Clip-local time ranges where the sound is replaced by a bleep (swear words). */
+  bleeps?: Array<{ start: number; end: number }>;
 }
 
 export interface ClipCover {
@@ -301,7 +303,8 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     !edit.music &&
     !soundEffectsActive(edit) &&
     !edit.progressBar &&
-    !edit.cover
+    !edit.cover &&
+    !edit.bleeps?.length
   );
 }
 

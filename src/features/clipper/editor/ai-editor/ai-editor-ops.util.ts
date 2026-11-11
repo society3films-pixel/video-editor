@@ -6,6 +6,7 @@
  * never has to guess timestamps.
  */
 import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "../caption-keywords.util";
+import { setLineEmoji } from "../caption-extras.util";
 import type { CaptionGroup, WordCue } from "../../lib/media/transcription-export.util";
 import {
   defaultScreenPanels,
@@ -39,6 +40,7 @@ export type AiEditOperation =
   | { op: "highlight_keywords" }
   | { op: "highlight_word"; line: number; word: string }
   | { op: "clear_highlights" }
+  | { op: "add_emoji"; line: number; emoji: string }
   | { op: "punch_in"; from_word: number; to_word: number; zoom?: number }
   | { op: "set_volume"; value: number }
   | { op: "set_fades"; in?: number; out?: number }
@@ -97,6 +99,7 @@ const OPS = new Set([
   "highlight_keywords",
   "highlight_word",
   "clear_highlights",
+  "add_emoji",
   "punch_in",
   "set_volume",
   "set_fades",
@@ -144,7 +147,7 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
   const skipped: string[] = [];
   let next: ClipEdit = { ...edit };
   const order = (op: AiEditOperation["op"]) =>
-    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "clear_highlights", "highlight_keywords", "highlight_word", "set_captions_visible", "add_text", "set_volume", "set_fades", "set_framing"].indexOf(op);
+    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "clear_highlights", "highlight_keywords", "highlight_word", "add_emoji", "set_captions_visible", "add_text", "set_volume", "set_fades", "set_framing"].indexOf(op);
   const operations = [...plan.operations].sort((a, b) => order(a.op) - order(b.op));
   const wordText = (from: number, to: number) => {
     const text = words.slice(Math.min(from, to), Math.max(from, to) + 1).map((w) => w.text).join(" ");
@@ -261,6 +264,21 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
           if (!group.words[wordIndex]!.emphasis) next = { ...next, captionGroups: toggleWordEmphasis(groups, operation.line, wordIndex) };
           applied.push(`Highlighted “${group.words[wordIndex]!.text}”`);
         }
+        break;
+      }
+      case "add_emoji": {
+        if (!context.canChangeSource) {
+          skipped.push("Caption emoji need the project's source video.");
+          break;
+        }
+        const groups = next.captionGroups ?? context.captionGroups;
+        const emoji = String(operation.emoji ?? "").trim();
+        if (!isIndex(operation.line, groups.length) || !emoji || emoji.length > 16) {
+          skipped.push("An emoji referred to a caption line that doesn't exist.");
+          break;
+        }
+        next = { ...next, captionGroups: setLineEmoji(groups, operation.line, emoji) };
+        applied.push(`Line ${operation.line + 1}: ${emoji}`);
         break;
       }
       case "set_captions_visible": {
