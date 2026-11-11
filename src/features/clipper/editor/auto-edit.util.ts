@@ -4,7 +4,8 @@
  * audio). Everything becomes ordinary editor state, so the user can review and undo it.
  */
 import { AudioBufferSink } from "mediabunny";
-import type { WordCue } from "../lib/media/transcription-export.util";
+import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
+import { highlightKeywords } from "./caption-keywords.util";
 import type { FaceBoxSample } from "../shared/face-samples.util";
 import type { ClipperClipSegmentWindow } from "../engine/segmentation/segmentation.types";
 import { selectDominantFacePair, facesFitSingleCrop } from "../engine/reframe/collage/track.util";
@@ -273,6 +274,7 @@ export interface AutoEditOptions {
   punchIns: boolean;
   hookTitle: boolean;
   levelVolume: boolean;
+  highlightKeywords: boolean;
 }
 
 export const DEFAULT_AUTO_EDIT_OPTIONS: AutoEditOptions = {
@@ -281,6 +283,7 @@ export const DEFAULT_AUTO_EDIT_OPTIONS: AutoEditOptions = {
   punchIns: true,
   hookTitle: true,
   levelVolume: true,
+  highlightKeywords: true,
 };
 
 export interface AutoEditInputs {
@@ -294,6 +297,8 @@ export interface AutoEditInputs {
     outputAspect: number;
   };
   levelGain?: number | null;
+  /** The clip's caption lines as currently rendered, for keyword highlighting. */
+  captionGroups?: readonly CaptionGroup[];
 }
 
 export interface AutoEditSummary {
@@ -303,6 +308,7 @@ export interface AutoEditSummary {
   punchIns: number;
   hook: string | null;
   gainDb: number | null;
+  keywords: number;
 }
 
 /** Applies the enabled auto-edit steps to an edit. Pure: the volume gain is measured beforehand. */
@@ -311,7 +317,7 @@ export function applyAutoEdit(
   inputs: AutoEditInputs,
   options: AutoEditOptions,
 ): { edit: ClipEdit; summary: AutoEditSummary } {
-  const summary: AutoEditSummary = { removedSec: 0, fillerCount: 0, fixedShots: 0, punchIns: 0, hook: null, gainDb: null };
+  const summary: AutoEditSummary = { removedSec: 0, fillerCount: 0, fixedShots: 0, punchIns: 0, hook: null, gainDb: null, keywords: 0 };
   let next: ClipEdit = { ...edit };
 
   if (options.cutPauses) {
@@ -359,6 +365,14 @@ export function applyAutoEdit(
     }
   }
 
+  if (options.highlightKeywords && inputs.captionGroups?.length) {
+    const highlighted = highlightKeywords(inputs.captionGroups);
+    if (highlighted.count > 0) {
+      next = { ...next, captionGroups: highlighted.groups };
+      summary.keywords = highlighted.count;
+    }
+  }
+
   if (options.levelVolume && inputs.levelGain && Number.isFinite(inputs.levelGain)) {
     next = { ...next, volume: Number(inputs.levelGain.toFixed(2)) };
     summary.gainDb = 20 * Math.log10(inputs.levelGain);
@@ -377,6 +391,7 @@ export function describeAutoEdit(summary: AutoEditSummary): string {
   if (summary.fixedShots) parts.push(`split screen on ${summary.fixedShots} shot${summary.fixedShots === 1 ? "" : "s"}`);
   if (summary.punchIns) parts.push(`${summary.punchIns} punch-in${summary.punchIns === 1 ? "" : "s"}`);
   if (summary.hook) parts.push("a hook title");
+  if (summary.keywords) parts.push(`${summary.keywords} highlighted keyword${summary.keywords === 1 ? "" : "s"}`);
   if (summary.gainDb !== null) {
     parts.push(Math.abs(summary.gainDb) < 0.5 ? "volume already level" : `volume ${summary.gainDb > 0 ? "+" : ""}${summary.gainDb.toFixed(1)} dB`);
   }

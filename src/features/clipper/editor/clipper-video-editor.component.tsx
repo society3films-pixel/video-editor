@@ -76,6 +76,7 @@ import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
 import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
 import { detectSpeakers } from "./speaker-detect.util";
 import { loadEditorAsset } from "./editor-assets.util";
+import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "./caption-keywords.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -609,7 +610,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     setAutoEditRunning(true);
     try {
       const options: AutoEditOptions = clipMode
-        ? { cutPauses: false, fixFraming: autoEditOptions.fixFraming, punchIns: false, hookTitle: false, levelVolume: false }
+        ? { cutPauses: false, fixFraming: autoEditOptions.fixFraming, punchIns: false, hookTitle: false, levelVolume: false, highlightKeywords: false }
         : autoEditOptions;
       let levelGain: number | null = null;
       if (options.levelVolume && result) {
@@ -632,6 +633,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 }
               : undefined,
           levelGain,
+          // Captions can only be changed when editing an export (clip mode edits framing only).
+          captionGroups: result ? (current.captionGroups ?? source?.frameContext.captionGroups) : undefined,
         },
         options,
       );
@@ -1125,6 +1128,24 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                   seek(time);
                 }}
                 onReset={() => applyEdit((current) => ({ ...current, captionGroups: null }))}
+                onToggleKeyword={(groupIndex, wordIndex) =>
+                  applyEdit((current) => ({
+                    ...current,
+                    captionGroups: toggleWordEmphasis(current.captionGroups ?? source?.frameContext.captionGroups ?? [], groupIndex, wordIndex),
+                  }))
+                }
+                onAutoKeywords={() =>
+                  applyEdit((current) => ({
+                    ...current,
+                    captionGroups: highlightKeywords(current.captionGroups ?? source?.frameContext.captionGroups ?? []).groups,
+                  }))
+                }
+                onClearKeywords={() =>
+                  applyEdit((current) => ({
+                    ...current,
+                    captionGroups: clearKeywords(current.captionGroups ?? source?.frameContext.captionGroups ?? []),
+                  }))
+                }
               />
             ) : (
               <ClipperEditorFramingPanel

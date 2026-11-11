@@ -999,6 +999,35 @@ function drawPodcastCaption(
   }
 }
 
+/** Hue in degrees of a #rrggbb colour, or null for greys and other formats. */
+function colorHue(color: string): number | null {
+  const match = /^#([0-9a-f]{6})$/i.exec(color.trim());
+  if (!match) return null;
+  const value = parseInt(match[1]!, 16);
+  const [r, g, b] = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map((v) => v / 255) as [number, number, number];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max - min < 0.15) return null;
+  const d = max - min;
+  const hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (hue * 60 + 360) % 360;
+}
+
+const KEYWORD_COLORS = ["#ffd400", "#3ee07a", "#ff4d6d", "#38c6ff"];
+
+/** Keyword colour: a bright colour clearly different from the spoken-word highlight. */
+function keywordColor(preset: CaptionPresetDefinition): string {
+  const activeHue = colorHue(preset.activeTextColor !== preset.textColor ? preset.activeTextColor : preset.activeColor);
+  if (activeHue === null) return KEYWORD_COLORS[0]!;
+  return (
+    KEYWORD_COLORS.find((color) => {
+      const hue = colorHue(color)!;
+      const distance = Math.abs(hue - activeHue);
+      return Math.min(distance, 360 - distance) >= 60;
+    }) ?? KEYWORD_COLORS[0]!
+  );
+}
+
 function drawCaptionWordBlock(
   ctx: CaptionContext,
   group: CaptionGroup,
@@ -1025,6 +1054,9 @@ function drawCaptionWordBlock(
     drawPodcastCaption(ctx, group, timestamp, width, height, preset);
     return;
   }
+  const basePreset = preset;
+  // Keywords the user (or AI) marked stay in the highlight colour the whole time.
+  const keywordPreset: CaptionPresetDefinition = { ...preset, textColor: keywordColor(preset) };
   ctx.save();
   try {
     const layout = getCaptionLayout(ctx, group.words, width, height, preset);
@@ -1085,6 +1117,7 @@ function drawCaptionWordBlock(
       baseline: number,
     ): void => {
       const word = group.words[placement.index]!;
+      const preset = word.emphasis ? keywordPreset : basePreset;
       if (preset.renderer === "karaoke") {
         drawKaraokeWord(
           ctx,

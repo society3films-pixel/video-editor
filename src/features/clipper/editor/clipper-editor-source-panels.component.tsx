@@ -6,6 +6,7 @@ import type { CaptionGroup } from "../lib/media/transcription-export.util";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import { captionGroupText, formatEditorTime } from "./clip-edit.util";
+import { countKeywords } from "./caption-keywords.util";
 import {
   isForcedSplit,
   type ClipFramingKeyframe,
@@ -62,6 +63,9 @@ interface CaptionsPanelProps {
   onChangeText: (index: number, text: string) => void;
   onSeek: (localTime: number) => void;
   onReset: () => void;
+  onToggleKeyword: (groupIndex: number, wordIndex: number) => void;
+  onAutoKeywords: () => void;
+  onClearKeywords: () => void;
 }
 
 export const ClipperEditorCaptionsPanel: React.FC<CaptionsPanelProps> = ({
@@ -73,8 +77,12 @@ export const ClipperEditorCaptionsPanel: React.FC<CaptionsPanelProps> = ({
   onChangeText,
   onSeek,
   onReset,
+  onToggleKeyword,
+  onAutoKeywords,
+  onClearKeywords,
 }) => {
   const { theme } = useClipperUi();
+  const keywordCount = countKeywords(groups);
   return (
     <Section title="Captions">
       <HStack gap={2}>
@@ -94,35 +102,83 @@ export const ClipperEditorCaptionsPanel: React.FC<CaptionsPanelProps> = ({
           Edit a line to change its wording. Clear a line to remove it. Click the time to jump there.
         </Text>
       )}
+      {groups.length ? (
+        <VStack align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+          <Text fontSize="xs" fontWeight="semibold">
+            Keywords
+          </Text>
+          <Text fontSize="xs" color={theme.text.muted}>
+            Highlighted words stay in the caption style's highlight colour. Click the words under the current line to
+            toggle them.{keywordCount ? ` ${keywordCount} highlighted.` : ""}
+          </Text>
+          <HStack gap={2}>
+            <OutlinedActionButton h="28px" px={2} fontSize="xs" startIcon={<Wand size={13} />} onClick={onAutoKeywords}>
+              Pick automatically
+            </OutlinedActionButton>
+            {keywordCount ? (
+              <OutlinedActionButton h="28px" px={2} fontSize="xs" onClick={onClearKeywords}>
+                Clear
+              </OutlinedActionButton>
+            ) : null}
+          </HStack>
+        </VStack>
+      ) : null}
       <VStack align="stretch" gap={1.5} opacity={visible ? 1 : 0.5}>
         {groups.map((group, index) => {
           const active = currentTime >= group.start && currentTime < group.end;
           return (
-            <HStack key={`${index}-${group.start}`} gap={2} align="center">
-              <Box
-                as="button"
-                onClick={() => onSeek(group.start + 0.01)}
-                fontSize="10px"
-                fontFamily="mono"
-                minW="42px"
-                textAlign="left"
-                color={active ? clipperTheme.accentGlow : theme.text.muted}
-                cursor="pointer"
-                _hover={{ color: theme.text.primary }}
-              >
-                {formatEditorTime(group.start)}
-              </Box>
-              <input
-                value={captionGroupText(group)}
-                onChange={(event) => onChangeText(index, event.target.value)}
-                onFocus={() => onSeek(group.start + 0.01)}
-                style={{
-                  ...fieldStyle,
-                  borderColor: active ? clipperTheme.accentGlow : "rgba(255,255,255,0.12)",
-                }}
-                aria-label={`Caption line ${index + 1}`}
-              />
-            </HStack>
+            <VStack key={`${index}-${group.start}`} align="stretch" gap={1}>
+              <HStack gap={2} align="center">
+                <Box
+                  as="button"
+                  onClick={() => onSeek(group.start + 0.01)}
+                  fontSize="10px"
+                  fontFamily="mono"
+                  minW="42px"
+                  textAlign="left"
+                  color={active ? clipperTheme.accentGlow : theme.text.muted}
+                  cursor="pointer"
+                  _hover={{ color: theme.text.primary }}
+                >
+                  {formatEditorTime(group.start)}
+                </Box>
+                <input
+                  value={captionGroupText(group)}
+                  onChange={(event) => onChangeText(index, event.target.value)}
+                  onFocus={() => onSeek(group.start + 0.01)}
+                  style={{
+                    ...fieldStyle,
+                    borderColor: active ? clipperTheme.accentGlow : "rgba(255,255,255,0.12)",
+                  }}
+                  aria-label={`Caption line ${index + 1}`}
+                />
+              </HStack>
+              {active || group.words.some((word) => word.emphasis) ? (
+                <HStack gap={1} flexWrap="wrap" pl="50px">
+                  {group.words.map((word, wordIndex) =>
+                    word.deleted ? null : (
+                      <Box
+                        key={wordIndex}
+                        as="button"
+                        title={word.emphasis ? "Remove highlight" : "Highlight this word"}
+                        onClick={() => onToggleKeyword(index, wordIndex)}
+                        fontSize="11px"
+                        px={1.5}
+                        py={0.5}
+                        borderRadius="sm"
+                        border="1px solid"
+                        cursor="pointer"
+                        borderColor={word.emphasis ? clipperTheme.accentGlow : theme.surface.hover}
+                        bg={word.emphasis ? `rgba(${clipperTheme.accentTintRgb},0.35)` : "transparent"}
+                        fontWeight={word.emphasis ? "bold" : "normal"}
+                      >
+                        {word.text}
+                      </Box>
+                    ),
+                  )}
+                </HStack>
+              ) : null}
+            </VStack>
           );
         })}
       </VStack>

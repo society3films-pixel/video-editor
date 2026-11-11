@@ -83,6 +83,7 @@ export async function batchEditExport(
             }
           : undefined,
         levelGain,
+        captionGroups: edit.captionGroups ?? source.frameContext.captionGroups,
       },
       options.auto,
     ).edit;

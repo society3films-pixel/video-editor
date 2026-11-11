@@ -22,6 +22,7 @@ const STEP_LABELS: Array<[keyof AutoEditOptions, string]> = [
   ["fixFraming", "Fix framing"],
   ["punchIns", "Punch-ins"],
   ["hookTitle", "Hook title"],
+  ["highlightKeywords", "Highlight keywords"],
   ["levelVolume", "Level volume"],
 ];
 

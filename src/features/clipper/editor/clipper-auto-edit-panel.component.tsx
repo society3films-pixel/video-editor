@@ -63,6 +63,12 @@ export const ClipperAutoEditPanel: React.FC<ClipperAutoEditPanelProps> = ({
       unavailable: hasTranscript ? undefined : noTranscript,
     },
     {
+      key: "highlightKeywords",
+      label: "Highlight keywords",
+      description: "Colours one key word in caption lines (numbers, names, strong words).",
+      unavailable: hasTranscript ? undefined : noTranscript,
+    },
+    {
       key: "levelVolume",
       label: "Level the volume",
       description: "Measures the speech and sets a consistent loudness.",

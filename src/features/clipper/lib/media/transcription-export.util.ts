@@ -48,6 +48,8 @@ export interface WordCue {
   deleted?: boolean;
   /** ASR text before the user's first edit (absent when unedited). */
   originalText?: string;
+  /** Keyword: drawn in the caption style's highlight colour the whole time it's on screen. */
+  emphasis?: boolean;
 }
 
 export interface CaptionGroup {

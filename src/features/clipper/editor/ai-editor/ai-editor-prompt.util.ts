@@ -24,6 +24,9 @@ Operations (word numbers are the [n] indexes in the transcript; ranges are inclu
 - {"op":"add_text","text":"...","from_word":n,"to_word":m,"position":"top|middle|bottom"}   on-screen text while those words play
 - {"op":"edit_caption","line":k,"text":"..."}      rewrite caption line k (keep the meaning; fix wording or spelling)
 - {"op":"set_captions_visible","visible":true|false}
+- {"op":"highlight_keywords"}                      colour one key word in caption lines automatically
+- {"op":"highlight_word","line":k,"word":"..."}    colour this word of caption line k (keyword emphasis)
+- {"op":"clear_highlights"}                        remove all keyword colouring
 - {"op":"punch_in","from_word":n,"to_word":m,"zoom":1.05-1.5}  zoom in for emphasis
 - {"op":"set_volume","value":0-2}                  1 = unchanged
 - {"op":"set_fades","in":seconds,"out":seconds}
@@ -69,7 +72,7 @@ export function buildAiEditMessages(
     return `${index}: ${formatSeconds(start)}-${formatSeconds(end)}`;
   });
   const captions = (edit.captionGroups ?? context.captionGroups).map(
-    (group, index) => `${index}: ${group.words.map((w) => w.text).join(" ")}`,
+    (group, index) => `${index}: ${group.words.map((w) => (w.emphasis ? `*${w.text}*` : w.text)).join(" ")}`,
   );
 
   const sections = [
@@ -79,8 +82,8 @@ export function buildAiEditMessages(
     edit.textOverlays.length ? `Existing on-screen text: ${edit.textOverlays.map((t) => `“${t.text}”`).join(", ")}` : null,
     `Volume: ${Math.round(edit.volume * 100)}%. Fades: ${edit.fadeInSec.toFixed(1)}s in, ${edit.fadeOutSec.toFixed(1)}s out.`,
     context.canChangeSource
-      ? `Shots:\n${shots.join("\n")}\n\nCaption lines:\n${captions.join("\n") || "(none)"}`
-      : "Captions and framing can't be changed for this clip (don't use edit_caption, set_captions_visible or set_framing).",
+      ? `Shots:\n${shots.join("\n")}\n\nCaption lines (*word* = highlighted keyword):\n${captions.join("\n") || "(none)"}`
+      : "Captions and framing can't be changed for this clip (don't use edit_caption, set_captions_visible, highlight_keywords, highlight_word, clear_highlights or set_framing).",
     `Transcript:\n${formatIndexedTranscript(context.words) || "(no transcript; word operations are not available)"}`,
     `Instruction: ${instruction.trim()}`,
   ].filter(Boolean);

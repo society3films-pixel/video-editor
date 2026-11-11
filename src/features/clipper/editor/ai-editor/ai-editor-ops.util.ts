@@ -5,6 +5,7 @@
  * Words are referred to by their index in the clip's word list (clip-local time), so the model
  * never has to guess timestamps.
  */
+import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "../caption-keywords.util";
 import type { CaptionGroup, WordCue } from "../../lib/media/transcription-export.util";
 import {
   defaultSplitPanels,
@@ -34,6 +35,9 @@ export type AiEditOperation =
   | { op: "add_text"; text: string; from_word: number; to_word: number; position?: ClipTextPosition }
   | { op: "edit_caption"; line: number; text: string }
   | { op: "set_captions_visible"; visible: boolean }
+  | { op: "highlight_keywords" }
+  | { op: "highlight_word"; line: number; word: string }
+  | { op: "clear_highlights" }
   | { op: "punch_in"; from_word: number; to_word: number; zoom?: number }
   | { op: "set_volume"; value: number }
   | { op: "set_fades"; in?: number; out?: number }
@@ -89,6 +93,9 @@ const OPS = new Set([
   "add_text",
   "edit_caption",
   "set_captions_visible",
+  "highlight_keywords",
+  "highlight_word",
+  "clear_highlights",
   "punch_in",
   "set_volume",
   "set_fades",
@@ -136,7 +143,7 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
   const skipped: string[] = [];
   let next: ClipEdit = { ...edit };
   const order = (op: AiEditOperation["op"]) =>
-    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "set_captions_visible", "add_text", "set_volume", "set_fades", "set_framing"].indexOf(op);
+    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "clear_highlights", "highlight_keywords", "highlight_word", "set_captions_visible", "add_text", "set_volume", "set_fades", "set_framing"].indexOf(op);
   const operations = [...plan.operations].sort((a, b) => order(a.op) - order(b.op));
   const wordText = (from: number, to: number) => {
     const text = words.slice(Math.min(from, to), Math.max(from, to) + 1).map((w) => w.text).join(" ");
@@ -223,6 +230,36 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
         }
         next = { ...next, captionGroups: setCaptionGroupText(groups, operation.line, operation.text) };
         applied.push(`Caption line ${operation.line + 1} → “${operation.text}”`);
+        break;
+      }
+      case "highlight_keywords":
+      case "highlight_word":
+      case "clear_highlights": {
+        if (!context.canChangeSource) {
+          skipped.push("Highlighting caption words needs the project's source video.");
+          break;
+        }
+        const groups = next.captionGroups ?? context.captionGroups;
+        if (operation.op === "clear_highlights") {
+          next = { ...next, captionGroups: clearKeywords(groups) };
+          applied.push("Removed keyword highlights");
+        } else if (operation.op === "highlight_keywords") {
+          const highlighted = highlightKeywords(groups);
+          next = { ...next, captionGroups: highlighted.groups };
+          applied.push(`Highlighted ${highlighted.count} keyword${highlighted.count === 1 ? "" : "s"}`);
+        } else {
+          const group = isIndex(operation.line, groups.length) ? groups[operation.line]! : null;
+          const target = String(operation.word ?? "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+          const wordIndex = group
+            ? group.words.findIndex((w) => w.text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "") === target)
+            : -1;
+          if (!group || wordIndex < 0) {
+            skipped.push(`Couldn't find “${operation.word}” in caption line ${Number(operation.line) + 1}.`);
+            break;
+          }
+          if (!group.words[wordIndex]!.emphasis) next = { ...next, captionGroups: toggleWordEmphasis(groups, operation.line, wordIndex) };
+          applied.push(`Highlighted “${group.words[wordIndex]!.text}”`);
+        }
         break;
       }
       case "set_captions_visible": {
