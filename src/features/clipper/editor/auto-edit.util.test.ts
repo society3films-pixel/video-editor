@@ -120,3 +120,23 @@ describe("punch-ins, hook and volume", () => {
     expect(describeAutoEdit(summary)).toMatch(/cut .*s of pauses.*1 punch-in.*hook title.*volume \+3\.5 dB/);
   });
 });
+
+import { punchInRect } from "./clip-edit-draw.util";
+describe("face-aware punch-ins", () => {
+  it("zooms towards the given point and records it on the part", () => {
+    const rect = punchInRect(1000, 1000, 1.2, { x: 0.8, y: 0.3 });
+    // The point stays where it was on screen.
+    expect(rect.x + 0.8 * rect.width).toBeCloseTo(800);
+    expect(rect.y + 0.3 * rect.height).toBeCloseTo(300);
+    const { segments } = applyPunchIns(
+      [
+        { id: "a", start: 0, end: 2 },
+        { id: "b", start: 2, end: 4 },
+      ],
+      1.15,
+      () => ({ x: 0.7, y: 0.4 }),
+    );
+    expect(segments[1]).toMatchObject({ zoom: 1.15, zoomCenter: { x: 0.7, y: 0.4 } });
+    expect(segments[0]!.zoomCenter).toBeUndefined();
+  });
+});

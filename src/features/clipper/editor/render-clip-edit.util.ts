@@ -46,10 +46,10 @@ function even(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2);
 }
 
-function drawFrame(ctx: OffscreenCanvasRenderingContext2D, sample: VideoSample, zoom: number): void {
+function drawFrame(ctx: OffscreenCanvasRenderingContext2D, sample: VideoSample, zoom: number, center?: { x: number; y: number }): void {
   const { width, height } = ctx.canvas;
   if (zoom > 1) {
-    const rect = punchInRect(width, height, zoom);
+    const rect = punchInRect(width, height, zoom, center);
     sample.draw(ctx, rect.x, rect.y, rect.width, rect.height);
   } else {
     sample.draw(ctx, 0, 0, width, height);
@@ -136,7 +136,7 @@ export async function renderClipEdit(
         try {
           coverCanvas = new OffscreenCanvas(width, height);
           const coverCtx = coverCanvas.getContext("2d")!;
-          drawFrame(coverCtx, sample, segment.zoom ?? 1);
+          drawFrame(coverCtx, sample, segment.zoom ?? 1, segment.zoomCenter);
           drawClipEditOverlays(coverCtx, { ...edit, fadeInSec: 0, fadeOutSec: 0, progressBar: null }, coverTime, mainDuration, width, height);
           drawCoverTitle(coverCtx, edit.cover.title, width, height);
         } finally {
@@ -178,7 +178,7 @@ export async function renderClipEdit(
             if (coverFirstFrames && timestamp < COVER_FIRST_FRAMES_SEC) {
               ctx.drawImage(coverFirstFrames, 0, 0);
             } else {
-              drawFrame(ctx, sample, segment.zoom ?? 1);
+              drawFrame(ctx, sample, segment.zoom ?? 1, segment.zoomCenter);
               const textTime = timestamp - hookLength;
               const insertFrames = new Map<string, { media: CanvasImageSource; width: number; height: number } | null>();
               if (insertMedia) {

@@ -211,15 +211,21 @@ export function planFramingFixes(
 export const PUNCH_IN_ZOOM = 1.15;
 
 /** Alternates a slight zoom on every other part, so jump cuts read as intentional. */
-export function applyPunchIns(segments: readonly ClipEditSegment[], zoom = PUNCH_IN_ZOOM): { segments: ClipEditSegment[]; count: number } {
+export function applyPunchIns(
+  segments: readonly ClipEditSegment[],
+  zoom = PUNCH_IN_ZOOM,
+  centerFor?: (start: number, end: number) => { x: number; y: number } | null,
+): { segments: ClipEditSegment[]; count: number } {
   let count = 0;
   const next = segments.map((segment, index) => {
     if (index % 2 === 1) {
       count++;
-      return { ...segment, zoom };
+      const center = centerFor?.(segment.start, segment.end);
+      return { ...segment, zoom, ...(center ? { zoomCenter: center } : {}) };
     }
-    const { zoom: _zoom, ...rest } = segment;
+    const { zoom: _zoom, zoomCenter: _center, ...rest } = segment;
     void _zoom;
+    void _center;
     return rest;
   });
   return { segments: next, count };
@@ -335,6 +341,8 @@ export interface AutoEditInputs {
   levelGain?: number | null;
   /** The clip's caption lines as currently rendered, for keyword highlighting. */
   captionGroups?: readonly CaptionGroup[];
+  /** Where to aim punch-ins (the speaker's face in the framed clip). */
+  punchInCenter?: (start: number, end: number) => { x: number; y: number } | null;
 }
 
 export interface AutoEditSummary {
@@ -366,7 +374,7 @@ export function applyAutoEdit(
   }
 
   if (options.punchIns && next.segments.length > 1) {
-    const punched = applyPunchIns(next.segments);
+    const punched = applyPunchIns(next.segments, PUNCH_IN_ZOOM, inputs.punchInCenter);
     next = { ...next, segments: punched.segments };
     summary.punchIns = punched.count;
   }

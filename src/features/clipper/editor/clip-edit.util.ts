@@ -33,6 +33,8 @@ export interface ClipEditSegment {
   end: number;
   /** Punch-in zoom for this part (1 = none); applied to the rendered export. */
   zoom?: number;
+  /** Point the punch-in zooms towards (0..1 of the frame), usually the speaker's face. */
+  zoomCenter?: { x: number; y: number };
 }
 
 export type ClipTextPosition = "top" | "middle" | "bottom";

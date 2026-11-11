@@ -159,11 +159,18 @@ export function drawClipEditOverlays(
 export const PUNCH_IN_CENTER = { x: 0.5, y: 0.42 } as const;
 
 /** Draw rectangle for a frame zoomed by `zoom` around PUNCH_IN_CENTER. */
-export function punchInRect(width: number, height: number, zoom: number): { x: number; y: number; width: number; height: number } {
+export function punchInRect(
+  width: number,
+  height: number,
+  zoom: number,
+  center: { x: number; y: number } = PUNCH_IN_CENTER,
+): { x: number; y: number; width: number; height: number } {
   const z = Math.max(1, zoom);
+  const cx = Math.min(1, Math.max(0, center.x));
+  const cy = Math.min(1, Math.max(0, center.y));
   return {
-    x: PUNCH_IN_CENTER.x * width * (1 - z),
-    y: PUNCH_IN_CENTER.y * height * (1 - z),
+    x: cx * width * (1 - z),
+    y: cy * height * (1 - z),
     width: width * z,
     height: height * z,
   };

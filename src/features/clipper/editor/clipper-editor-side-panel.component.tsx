@@ -35,6 +35,7 @@ interface ClipperEditorSidePanelProps {
   /** The clip's caption lines as shown, for templates. */
   captionGroups?: readonly CaptionGroup[];
   onMeasureColor?: () => Promise<ColorCorrection | null>;
+  punchInCenter?: (start: number, end: number) => { x: number; y: number } | null;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -274,6 +275,7 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   onPreviewHook,
   captionGroups,
   onMeasureColor,
+  punchInCenter,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -302,7 +304,14 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
               onChange((current) => ({
                 ...current,
                 segments: current.segments.map((segment) =>
-                  segment.id === activePart.id ? { ...segment, zoom: zoom > 1.001 ? zoom : undefined } : segment,
+                  segment.id === activePart.id
+                    ? {
+                        ...segment,
+                        zoom: zoom > 1.001 ? zoom : undefined,
+                        // Aim at the speaker the first time a part is zoomed.
+                        zoomCenter: zoom > 1.001 ? (segment.zoomCenter ?? punchInCenter?.(segment.start, segment.end) ?? undefined) : undefined,
+                      }
+                    : segment,
                 ),
               }))
             }

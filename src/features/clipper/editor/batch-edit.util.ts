@@ -22,6 +22,7 @@ import { requestEdit } from "./ai-editor/ai-editor-providers.util";
 import type { AiChoice } from "./ai-editor/ai-choice.util";
 import { applyTemplate, type EditTemplate } from "./edit-templates.util";
 import { measureClipColor } from "./color-measure.util";
+import { faceCenterInOutput } from "./punch-in-center.util";
 
 export interface BatchEditOptions {
   auto: AutoEditOptions | null;
@@ -87,6 +88,7 @@ export async function batchEditExport(
           : undefined,
         levelGain,
         captionGroups: edit.captionGroups ?? source.frameContext.captionGroups,
+        punchInCenter: (start, end) => faceCenterInOutput(source, start, end),
       },
       options.auto,
     ).edit;

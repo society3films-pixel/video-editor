@@ -82,7 +82,7 @@ export function drawEditorPreviewFrame(
   const zoom = segment?.zoom ?? 1;
   if (zoom > 1) {
     // Same transform the renderer uses, so punch-ins preview exactly.
-    const rect = punchInRect(size.width, size.height, zoom);
+    const rect = punchInRect(size.width, size.height, zoom, segment?.zoomCenter);
     ctx.setTransform(zoom, 0, 0, zoom, rect.x, rect.y);
   }
   if (video.readyState >= 2 && video.videoWidth > 0) {

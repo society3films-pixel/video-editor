@@ -85,6 +85,7 @@ import { PreviewSounds } from "./preview-sounds.util";
 import { exportToPremiere } from "./premiere-export.util";
 import { measureClipColor } from "./color-measure.util";
 import { learnFromFraming } from "./framing-learning.util";
+import { faceCenterInOutput } from "./punch-in-center.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -686,6 +687,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           levelGain,
           // Captions can only be changed when editing an export (clip mode edits framing only).
           captionGroups: result ? (current.captionGroups ?? source?.frameContext.captionGroups) : undefined,
+          punchInCenter: source ? (start, end) => faceCenterInOutput(source, start, end) : undefined,
         },
         options,
       );
@@ -1213,6 +1215,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onPreviewHook={previewHook}
                 captionGroups={captionGroups}
                 onMeasureColor={source ? () => measureClipColor(source) : undefined}
+                punchInCenter={source ? (start, end) => faceCenterInOutput(source, start, end) : undefined}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />
