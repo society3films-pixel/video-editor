@@ -25,6 +25,7 @@ import { sourceToOutputTime, type ClipEdit, type ClipEditSegment } from "./clip-
 import { renderSegmentsFor } from "./hook.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { resolveSourceFile } from "./save-edited-export.util";
+import { angleAt, angleTime, type ClipAngle } from "./multicam.util";
 
 export interface FrameRate {
   timebase: number;
@@ -74,6 +75,8 @@ export interface PremiereSequenceInput {
   /** Parts in the video file's time, in timeline order (hook first). */
   parts: readonly Pick<ClipEditSegment, "start" | "end">[];
   music?: (PremiereMedia & { startSec: number }) | null;
+  /** Other camera angles on V2: a span of `media` from `inSec` placed at timeline `startSec`. */
+  overlays?: Array<{ media: PremiereMedia; inSec: number; outSec: number; startSec: number }>;
 }
 
 function rateXml(rate: FrameRate): string {
@@ -125,7 +128,25 @@ export function buildPremiereXml(input: PremiereSequenceInput): string {
     `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="4">` +
     `<sequence id="sequence-1"><name>${escapeXml(input.name)}</name><duration>${total}</duration>${rate}` +
     `<media><video><format><samplecharacteristics>${rate}<width>${input.width}</width><height>${input.height}</height><pixelaspectratio>square</pixelaspectratio></samplecharacteristics></format>` +
-    `<track>${placed.map((p) => item("v", p)).join("")}</track></video>` +
+    `<track>${placed.map((p) => item("v", p)).join("")}</track>` +
+    (input.overlays?.length
+      ? `<track>${input.overlays
+          .map((o, index) => {
+            const fileId = `file-angle-${input.overlays!.findIndex((other) => other.media.path === o.media.path) + 1}`;
+            const firstUse = input.overlays!.findIndex((other) => other.media.path === o.media.path) === index;
+            const start = frames(o.startSec);
+            const inFrame = frames(o.inSec);
+            const length = Math.max(1, frames(o.outSec) - inFrame);
+            return (
+              `<clipitem id="clipitem-angle${index + 1}"><name>${escapeXml(o.media.name)}</name><enabled>TRUE</enabled><duration>${frames(o.media.durationSec)}</duration>${rate}` +
+              `<start>${start}</start><end>${start + length}</end><in>${inFrame}</in><out>${inFrame + length}</out>` +
+              (firstUse ? fileXml(fileId, o.media, true) : `<file id="${fileId}"/>`) +
+              `</clipitem>`
+            );
+          })
+          .join("")}</track>`
+      : "") +
+    `</video>` +
     `<audio><track>${placed.map((p) => item("a", p)).join("")}</track>${musicTrack}</audio></media></sequence></xmeml>\n`
   );
 }
@@ -318,7 +339,47 @@ async function exportToPremiereUnlocked(
     }
   }
 
-  // 3. Timeline and captions.
+  // 3. Other camera angles (copied next to the project) as V2 clips where they're used.
+  const overlays: NonNullable<PremiereSequenceInput["overlays"]> = [];
+  if (edit.angles?.length && source) {
+    const media = new Map<string, PremiereMedia>();
+    let offset = 0;
+    // Runs of the same angle, in clip-local time, with where they land on the timeline.
+    const runs: Array<{ angle: ClipAngle; from: number; to: number; at: number }> = [];
+    for (const part of renderSegmentsFor(edit)) {
+      const segment = edit.segments.find((s) => s.id === part.id);
+      let current: { angle: ClipAngle; from: number } | null = null;
+      for (let t = part.start; t < part.end + 0.1; t += 0.1) {
+        const angle = t < part.end ? angleAt(edit, segment, t) : null;
+        if (current && angle?.id !== current.angle.id) {
+          const to = Math.min(t, part.end);
+          runs.push({ angle: current.angle, from: current.from, to, at: offset + (current.from - part.start) });
+          current = null;
+        }
+        if (angle && !current) current = { angle, from: t };
+      }
+      offset += part.end - part.start;
+    }
+    for (const run of runs) {
+      let item = media.get(run.angle.id);
+      if (!item) {
+        const file = await loadEditorAsset(run.angle.assetId);
+        if (!file) continue;
+        const name = `${stem}-angle-${media.size + 1}${/\.[a-z0-9]+$/i.exec(file.name)?.[0] ?? ".mp4"}`;
+        item = { name, path: await writeFile(projectId, name, file), durationSec: (await measureVideo(file)).durationSec };
+        media.set(run.angle.id, item);
+        files.push(name);
+      }
+      overlays.push({
+        media: item,
+        inSec: angleTime(run.angle, source.clip.segments, run.from),
+        outSec: angleTime(run.angle, source.clip.segments, run.to),
+        startSec: run.at,
+      });
+    }
+  }
+
+  // 4. Timeline and captions.
   const xml = buildPremiereXml({
     name: stem,
     width: video.width,
@@ -327,6 +388,7 @@ async function exportToPremiereUnlocked(
     video: { name: `${stem}.mp4`, path: videoPath, durationSec: video.durationSec },
     parts: renderSegmentsFor(edit),
     music,
+    overlays,
   });
   await writeFile(projectId, `${stem}.xml`, new Blob([xml], { type: "application/xml" }));
   files.push(`${stem}.xml`);

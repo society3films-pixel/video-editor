@@ -16,6 +16,8 @@ import { clipEditNeedsPostProcess, type ClipEdit } from "./clip-edit.util";
 import { toPersistedClipEdit } from "./clip-edit-persist.util";
 import { applyEditToFrameContext, type ClipEditorSource } from "./clip-editor-source.util";
 import { renderClipEdit } from "./render-clip-edit.util";
+import { drawClipperCaptions } from "../engine/render/canvas-draw.util";
+import { localTimeToSourceTime } from "../engine/segmentation/clip-time.util";
 
 export interface SaveEditedExportOptions {
   signal?: AbortSignal;
@@ -52,7 +54,7 @@ function buildEditRender(
 
   if (!needsSource) {
     return async (outputSink) => {
-      const result = await renderClipEdit(await sourceFile(), edit, { signal, onProgress, outputSink });
+      const result = await renderClipEdit(await sourceFile(), edit, { signal, onProgress, outputSink, multicam: multicamFor(source, edit) });
       return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height, cover: result.cover };
     };
   }
@@ -82,9 +84,21 @@ function buildEditRender(
     const result = await renderClipEdit(rendered, edit, {
       signal,
       outputSink,
+      multicam: multicamFor(source, edit),
       onProgress: (ratio) => onProgress?.(0.05 + sourceShare + ratio * (0.95 - sourceShare)),
     });
     return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height, cover: result.cover };
+  };
+}
+
+/** Multicam needs the clip's windows (to sync angles) and the captions to draw over angle frames. */
+function multicamFor(source: ClipEditorSource | null | undefined, edit: ClipEdit) {
+  if (!source || !edit.angles?.length) return undefined;
+  const context = applyEditToFrameContext(source.frameContext, edit);
+  return {
+    clipSegments: source.clip.segments,
+    drawCaptions: (ctx: OffscreenCanvasRenderingContext2D, t: number, width: number, height: number) =>
+      drawClipperCaptions(ctx, { width, height }, localTimeToSourceTime(source.clip.segments, t), context),
   };
 }
 

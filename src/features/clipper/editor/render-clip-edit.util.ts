@@ -25,8 +25,15 @@ import { analyzeStabilization, correctionAt } from "./stabilize.util";
 import { VoiceCleanup } from "./voice-cleanup.util";
 import { beatPulseZoom } from "./beat-sync.util";
 import { musicAmount } from "./music-detect.util";
+import { angleAt, angleCrop, angleTime, loadAngleReaders } from "./multicam.util";
+import type { ClipperClipSegmentWindow } from "../engine/segmentation/segmentation.types";
 
 export interface RenderClipEditOptions {
+  /** Multicam: the clip's windows in the range (angle sync) and a caption painter for angle frames. */
+  multicam?: {
+    clipSegments: ClipperClipSegmentWindow[];
+    drawCaptions?: (ctx: OffscreenCanvasRenderingContext2D, clipLocalTime: number, width: number, height: number) => void;
+  };
   /** Stream the MP4 straight to disk. Omit to render into memory. */
   outputSink?: WritableStream<StreamTargetChunk>;
   signal?: AbortSignal;
@@ -183,6 +190,8 @@ export async function renderClipEdit(
     }
     const coverFirstFrames = coverCanvas && edit.cover?.firstFrames ? coverCanvas : null;
     const insertMedia = edit.inserts?.length ? await loadInsertMedia(edit.inserts) : null;
+    const multicam = options.multicam;
+    const angleReaders = multicam && edit.angles?.length ? await loadAngleReaders(edit.angles) : null;
     // Stabilising measures the whole file first (about a fifth of the save time).
     const stabilizePath = edit.stabilize
       ? await analyzeStabilization(file, edit.stabilize, { signal, onProgress: (ratio) => onProgress?.(ratio * 0.2) })
@@ -219,6 +228,21 @@ export async function renderClipEdit(
             ctx.clearRect(0, 0, width, height);
             if (coverFirstFrames && timestamp < COVER_FIRST_FRAMES_SEC) {
               ctx.drawImage(coverFirstFrames, 0, 0);
+            } else if (angleReaders && multicam && angleAt(edit, segment, sample.timestamp)) {
+              // Another camera for this moment: its frame, cropped to the output, with the captions drawn again.
+              const angle = angleAt(edit, segment, sample.timestamp)!;
+              const frame = await angleReaders.frameAt(angle, angleTime(angle, multicam.clipSegments, sample.timestamp));
+              if (frame) {
+                const crop = angleCrop(angle, frame.displayWidth, frame.displayHeight, width, height);
+                const zoom = (segment.zoom ?? 1) * beatPulseZoom(edit.beatPulse, timestamp);
+                const rect = zoom > 1 ? punchInRect(width, height, zoom, segment.zoomCenter) : { x: 0, y: 0, width, height };
+                frame.draw(ctx, crop.sx, crop.sy, crop.sw, crop.sh, rect.x, rect.y, rect.width, rect.height);
+              } else {
+                drawFrame(ctx, sample, segment.zoom ?? 1, segment.zoomCenter);
+              }
+              multicam.drawCaptions?.(ctx, sample.timestamp, width, height);
+              const textTime = timestamp - hookLength;
+              drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height, { textTime });
             } else {
               drawFrame(
                 ctx,
@@ -383,6 +407,7 @@ export async function renderClipEdit(
     } finally {
       signal?.removeEventListener("abort", onAbort);
       insertMedia?.dispose();
+      angleReaders?.dispose();
     }
 
     const cover = coverCanvas ? await coverCanvas.convertToBlob({ type: "image/png" }) : undefined;

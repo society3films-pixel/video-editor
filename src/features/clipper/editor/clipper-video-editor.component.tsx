@@ -88,6 +88,7 @@ import { measureClipColor } from "./color-measure.util";
 import { learnFromFraming } from "./framing-learning.util";
 import { faceCenterInOutput } from "./punch-in-center.util";
 import { detectMusicSections } from "./music-detect.util";
+import { syncAngle } from "./multicam.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -1305,6 +1306,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 punchInCenter={source ? (start, end) => faceCenterInOutput(source, start, end) : undefined}
                 onFindMusic={result ? async () => detectMusicSections(await resolveSourceFile(result, projectId), autoEditWords) : undefined}
                 projectId={projectId}
+                onSyncAngle={source ? (file) => syncAngle(file, source.rangeFile, source.clip.segments) : undefined}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />

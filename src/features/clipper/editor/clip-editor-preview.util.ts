@@ -1,4 +1,6 @@
 import { drawClipperFrame, resolveClipperFrameGeometry } from "../engine/render/index";
+import { angleAt, angleCrop } from "./multicam.util";
+import { drawClipperCaptions } from "../engine/render/canvas-draw.util";
 import { beatPulseZoom } from "./beat-sync.util";
 import { activeInserts, pauseIdlePreviewInserts, previewInsertFrame } from "./broll.util";
 import type { ClipperFrameContext } from "../engine/render/index";
@@ -89,7 +91,24 @@ export function drawEditorPreviewFrame(
     ctx.setTransform(zoom, 0, 0, zoom, rect.x, rect.y);
   }
   if (video.readyState >= 2 && video.videoWidth > 0) {
-    if (source && frameContext) {
+    const angle = source && frameContext ? angleAt(edit, segment ?? undefined, localTime) : null;
+    const angleFrame = angle
+      ? previewInsertFrame(
+          { id: angle.id, assetId: angle.assetId, name: angle.name, kind: "video", start: 0, end: Infinity, layout: "full" },
+          video.currentTime + angle.offsetSec,
+          !video.paused,
+          () => {},
+        )
+      : null;
+    if (angle && angleFrame && frameContext) {
+      // Another camera here: its picture, then the captions on top.
+      const crop = angleCrop(angle, angleFrame.width, angleFrame.height, size.width, size.height);
+      ctx.drawImage(angleFrame.media, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, size.width, size.height);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      drawClipperCaptions(ctx, size, video.currentTime, frameContext);
+      ctx.restore();
+    } else if (source && frameContext) {
       const videoSize = { width: video.videoWidth, height: video.videoHeight };
       drawClipperFrame(source.formatDef, ctx, video, videoSize, size, video.currentTime, frameContext);
     } else {

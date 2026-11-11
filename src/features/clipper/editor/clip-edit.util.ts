@@ -17,6 +17,7 @@ import type { StabilizeSettings } from "./stabilize.util";
 import type { VoiceCleanupSettings } from "./voice-cleanup.util";
 import type { BeatPulse } from "./beat-sync.util";
 import type { MusicSection } from "./music-detect.util";
+import type { ClipAngle } from "./multicam.util";
 import { isColorGradeActive, type ColorGrade } from "../engine/render/color-grade.util";
 import type { CaptionStyleCustom, ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
 import type { ClipperCaptionPosition, ClipperCaptionSize } from "../settings/settings.util";
@@ -44,6 +45,8 @@ export interface ClipEditSegment {
    * negative). The previous part's sound ends to match.
    */
   audioOffset?: number;
+  /** Camera angle shown for this part (an id from ClipEdit.angles); absent = automatic. */
+  angle?: string;
 }
 
 export type ClipTextPosition = "top" | "middle" | "bottom";
@@ -102,6 +105,10 @@ export interface ClipEdit {
   musicSections?: MusicSection[] | null;
   /** Bring performances to the speech level using each section's gain. */
   balanceMusic?: boolean;
+  /** Extra camera angles synced by sound (see multicam.util). */
+  angles?: ClipAngle[];
+  /** Angle shown automatically during songs (unless a part picks one). */
+  angleForSongs?: string | null;
 }
 
 export interface ClipCaptionStyle {
@@ -353,7 +360,8 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     !edit.stabilize &&
     !(edit.voiceCleanup && (edit.voiceCleanup.denoise || edit.voiceCleanup.compress)) &&
     !edit.beatPulse?.beats.length &&
-    !(edit.balanceMusic && edit.musicSections?.length)
+    !(edit.balanceMusic && edit.musicSections?.length) &&
+    !(edit.angles?.length && (edit.angleForSongs || edit.segments.some((segment) => segment.angle)))
   );
 }
 

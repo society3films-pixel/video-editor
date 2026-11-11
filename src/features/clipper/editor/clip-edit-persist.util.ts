@@ -45,6 +45,7 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
       start: Math.max(0, s.start),
       end: Math.min(duration, s.end),
       ...(isFiniteNumber(s.zoom) && s.zoom > 1 ? { zoom: Math.min(2, s.zoom) } : {}),
+      ...(typeof s.angle === "string" ? { angle: s.angle } : {}),
       ...(isFiniteNumber(s.audioOffset) && s.audioOffset !== 0 ? { audioOffset: Math.max(-2, Math.min(2, s.audioOffset)) } : {}),
       ...(s.zoomCenter && isFiniteNumber(s.zoomCenter.x) && isFiniteNumber(s.zoomCenter.y)
         ? { zoomCenter: { x: Math.min(1, Math.max(0, s.zoomCenter.x)), y: Math.min(1, Math.max(0, s.zoomCenter.y)) } }
@@ -75,6 +76,21 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
           .map((m) => ({ start: m.start, end: m.end, gain: isFiniteNumber(m.gain) ? m.gain : 1 }))
       : null,
     balanceMusic: value.balanceMusic === true,
+    angles: Array.isArray(value.angles)
+      ? value.angles
+          .filter((a) => a && typeof a.id === "string" && typeof a.assetId === "string" && isFiniteNumber(a.offsetSec))
+          .map((a) => ({
+            id: a.id,
+            assetId: a.assetId,
+            name: typeof a.name === "string" ? a.name : "Angle",
+            offsetSec: a.offsetSec,
+            confidence: isFiniteNumber(a.confidence) ? a.confidence : 0,
+            x: isFiniteNumber(a.x) ? a.x : 0.5,
+            y: isFiniteNumber(a.y) ? a.y : 0.5,
+            zoom: isFiniteNumber(a.zoom) ? a.zoom : 1,
+          }))
+      : [],
+    angleForSongs: typeof value.angleForSongs === "string" ? value.angleForSongs : null,
     voiceCleanup:
       value.voiceCleanup && typeof value.voiceCleanup === "object"
         ? { denoise: value.voiceCleanup.denoise === true, compress: value.voiceCleanup.compress === true }

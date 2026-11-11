@@ -8,6 +8,7 @@ import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.componen
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import { ClipperEditTemplates } from "./clipper-edit-templates.component";
 import { ClipperBrollLibrary } from "./clipper-broll-library.component";
+import { ClipperCameraAngles } from "./clipper-camera-angles.component";
 import type { ColorCorrection } from "../engine/render/color-grade.util";
 import type { MusicSection } from "./music-detect.util";
 import {
@@ -40,6 +41,7 @@ interface ClipperEditorSidePanelProps {
   punchInCenter?: (start: number, end: number) => { x: number; y: number } | null;
   onFindMusic?: () => Promise<MusicSection[]>;
   projectId?: string;
+  onSyncAngle?: (file: File) => Promise<{ offsetSec: number; confidence: number }>;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -282,6 +284,7 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   punchInCenter,
   onFindMusic,
   projectId,
+  onSyncAngle,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -322,6 +325,29 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
               }))
             }
           />
+          {edit.angles?.length ? (
+            <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+              Camera
+              <select
+                value={activePart.angle ?? ""}
+                onChange={(e) =>
+                  onChange((current) => ({
+                    ...current,
+                    segments: current.segments.map((segment) => (segment.id === activePart.id ? { ...segment, angle: e.target.value || undefined } : segment)),
+                  }))
+                }
+                style={{ ...fieldStyle, width: "auto", padding: "2px 6px" }}
+                aria-label="Camera for this part"
+              >
+                <option value="">Main{edit.angleForSongs ? " (angle during songs)" : ""}</option>
+                {edit.angles.map((angle) => (
+                  <option key={angle.id} value={angle.id}>
+                    {angle.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {activePartIndex > 0 ? (
             <>
               <SliderRow
@@ -402,6 +428,8 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
           onMeasureColor={onMeasureColor}
         />
       ) : null}
+
+      {words ? <ClipperCameraAngles edit={edit} onChange={onChange} onSyncAngle={onSyncAngle} /> : null}
 
       {projectId && words ? <ClipperBrollLibrary projectId={projectId} edit={edit} words={words} onChange={onChange} /> : null}
 
