@@ -21,6 +21,7 @@ import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.uti
 import { requestEdit } from "./ai-editor/ai-editor-providers.util";
 import type { AiChoice } from "./ai-editor/ai-choice.util";
 import { applyTemplate, type EditTemplate } from "./edit-templates.util";
+import { measureClipColor } from "./color-measure.util";
 
 export interface BatchEditOptions {
   auto: AutoEditOptions | null;
@@ -96,6 +97,7 @@ export async function batchEditExport(
       captionGroups: edit.captionGroups ?? source.frameContext.captionGroups,
       words,
       duration,
+      colorCorrection: options.template.colorGrade?.auto ? await measureClipColor(source).catch(() => null) : null,
     });
   }
 

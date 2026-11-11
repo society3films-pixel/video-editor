@@ -5,6 +5,7 @@ import { OutlinedActionButton } from "../../../shared/components/buttons/outline
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import type { ClipEdit } from "./clip-edit.util";
+import type { ColorCorrection } from "../engine/render/color-grade.util";
 import { Section, fieldStyle } from "./clipper-editor-side-panel.component";
 import { applyTemplate, deleteTemplate, describeTemplate, loadTemplates, saveTemplate, templateFromEdit, type EditTemplate } from "./edit-templates.util";
 
@@ -15,7 +16,8 @@ export const ClipperEditTemplates: React.FC<{
   words: readonly WordCue[];
   sourceDuration: number;
   onChange: (updater: (edit: ClipEdit) => ClipEdit) => void;
-}> = ({ edit, captionGroups, words, sourceDuration, onChange }) => {
+  onMeasureColor?: () => Promise<ColorCorrection | null>;
+}> = ({ edit, captionGroups, words, sourceDuration, onChange, onMeasureColor }) => {
   const { theme } = useClipperUi();
   const [templates, setTemplates] = useState<EditTemplate[]>([]);
   const [selected, setSelected] = useState("");
@@ -49,8 +51,11 @@ export const ClipperEditTemplates: React.FC<{
               disabled={!template}
               onClick={() => {
                 if (!template) return;
-                onChange((current) => applyTemplate(current, template, { captionGroups, words, duration: sourceDuration }));
-                setNote(`Applied “${template.name}”. Undo to go back.`);
+                void (async () => {
+                  const colorCorrection = template.colorGrade?.auto && onMeasureColor ? await onMeasureColor().catch(() => null) : null;
+                  onChange((current) => applyTemplate(current, template, { captionGroups, words, duration: sourceDuration, colorCorrection }));
+                  setNote(`Applied “${template.name}”. Undo to go back.`);
+                })();
               }}
             >
               Apply

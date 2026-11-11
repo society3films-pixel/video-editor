@@ -83,6 +83,7 @@ import { ClipperFramingIssues } from "./clipper-framing-issues.component";
 import { ClipperCaptionExtras } from "./clipper-caption-extras.component";
 import { PreviewSounds } from "./preview-sounds.util";
 import { exportToPremiere } from "./premiere-export.util";
+import { measureClipColor } from "./color-measure.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -1201,6 +1202,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 sourceDuration={duration}
                 onPreviewHook={previewHook}
                 captionGroups={captionGroups}
+                onMeasureColor={source ? () => measureClipColor(source) : undefined}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />

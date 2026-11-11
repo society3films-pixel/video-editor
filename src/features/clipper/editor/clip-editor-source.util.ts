@@ -104,6 +104,7 @@ export function applyEditToFrameContext(base: ClipperFrameContext, edit: ClipEdi
         ? base.settings
         : { ...base.settings, captions: { ...base.settings.captions, ...edit.captionStyle, enabled: captionsEnabled } },
     captionGroups: edit.captionGroups ?? base.captionGroups,
+    colorGrade: edit.colorGrade ?? base.colorGrade ?? null,
     framing: edit.framing
       ? { track: edit.framing, aiShotBoundaries: base.framing?.aiShotBoundaries ?? [] }
       : base.framing,

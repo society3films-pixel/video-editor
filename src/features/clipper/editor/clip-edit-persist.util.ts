@@ -1,5 +1,6 @@
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
 import { normalizeCaptionPresetId } from "../lib/captions/caption-presets.util";
+import { COLOR_STYLE_LABEL } from "../engine/render/color-grade.util";
 import {
   MIN_SEGMENT_SEC,
   type ClipEdit,
@@ -58,6 +59,22 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
     cover: parseCover(value.cover),
+    colorGrade:
+      value.colorGrade && typeof value.colorGrade.style === "string" && value.colorGrade.style in COLOR_STYLE_LABEL
+        ? {
+            style: value.colorGrade.style,
+            intensity: isFiniteNumber(value.colorGrade.intensity) ? Math.min(1, Math.max(0, value.colorGrade.intensity)) : 1,
+            auto:
+              value.colorGrade.auto && isFiniteNumber(value.colorGrade.auto.brightness)
+                ? {
+                    brightness: value.colorGrade.auto.brightness,
+                    contrast: isFiniteNumber(value.colorGrade.auto.contrast) ? value.colorGrade.auto.contrast : 1,
+                    saturation: isFiniteNumber(value.colorGrade.auto.saturation) ? value.colorGrade.auto.saturation : 1,
+                    warmth: isFiniteNumber(value.colorGrade.auto.warmth) ? value.colorGrade.auto.warmth : 0,
+                  }
+                : null,
+          }
+        : null,
     captionStyle:
       value.captionStyle && typeof value.captionStyle.presetId === "string"
         ? {

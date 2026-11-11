@@ -7,6 +7,7 @@ import { clipperTheme } from "../shared/theme.util";
 import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.component";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import { ClipperEditTemplates } from "./clipper-edit-templates.component";
+import type { ColorCorrection } from "../engine/render/color-grade.util";
 import {
   formatEditorTime,
   type ClipEdit,
@@ -33,6 +34,7 @@ interface ClipperEditorSidePanelProps {
   onPreviewHook?: () => void;
   /** The clip's caption lines as shown, for templates. */
   captionGroups?: readonly CaptionGroup[];
+  onMeasureColor?: () => Promise<ColorCorrection | null>;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -271,6 +273,7 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   sourceDuration,
   onPreviewHook,
   captionGroups,
+  onMeasureColor,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -345,7 +348,14 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
       </Section>
 
       {words ? (
-        <ClipperEditTemplates edit={edit} captionGroups={captionGroups ?? []} words={words} sourceDuration={sourceDuration ?? 0} onChange={onChange} />
+        <ClipperEditTemplates
+          edit={edit}
+          captionGroups={captionGroups ?? []}
+          words={words}
+          sourceDuration={sourceDuration ?? 0}
+          onChange={onChange}
+          onMeasureColor={onMeasureColor}
+        />
       ) : null}
 
       <ClipperEditorExtrasPanel
@@ -357,6 +367,7 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
         words={words}
         sourceDuration={sourceDuration}
         onPreviewHook={onPreviewHook}
+        onMeasureColor={onMeasureColor}
       />
 
       <Section title="Fades">

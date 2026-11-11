@@ -1,3 +1,4 @@
+import type { ColorGrade } from "../render/color-grade.util";
 import type { ClipFramingRender } from "../render/framing-override.util";
 import type { CaptionGroup } from "../../lib/media/transcription-export.util";
 import type { ClipperLayoutMode } from "../../shared/smart-crop.util";
@@ -53,6 +54,8 @@ export interface ClipperFrameContext {
   segments?: ClipperClipSegmentWindow[];
   /** User framing keyframes for this clip, in clip-local time. Absent = pure AI framing. */
   framing?: ClipFramingRender;
+  /** Colour correction and look applied to the picture (not captions). */
+  colorGrade?: ColorGrade | null;
 }
 
 /** Frame context for an arbitrary word range (`null` = whole range, no clip window). */

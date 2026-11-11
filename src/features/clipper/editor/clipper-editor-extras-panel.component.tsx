@@ -2,6 +2,19 @@ import React, { useRef, useState } from "react";
 import { Box, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
 import { Film, Image, Music, Sparkles, Trash2 } from "lucide-react";
 import { INSERT_LAYOUT_LABEL, type ClipInsert, type ClipInsertLayout } from "./broll.util";
+import {
+  COLOR_STYLE_LABEL,
+  isColorGradeActive,
+  type ColorCorrection,
+  type ColorGrade,
+  type ColorStyle,
+} from "../engine/render/color-grade.util";
+
+function describeCorrection(c: ColorCorrection): string {
+  const pct = (v: number) => `${v >= 1 ? "+" : ""}${Math.round((v - 1) * 100)}%`;
+  const cast = Math.abs(c.warmth) < 0.05 ? "no colour cast" : c.warmth > 0 ? "warmed a cool cast" : "cooled a warm cast";
+  return `Auto: brightness ${pct(c.brightness)}, contrast ${pct(c.contrast)}, saturation ${pct(c.saturation)}, ${cast}.`;
+}
 import type { WordCue } from "../lib/media/transcription-export.util";
 import { pickHookLocally, pickHookWithAi } from "./hook.util";
 import { describeAiChoice, resolveAiChoice } from "./ai-editor/ai-choice.util";
@@ -28,6 +41,8 @@ interface ExtrasPanelProps {
   words?: readonly WordCue[];
   sourceDuration?: number;
   onPreviewHook?: () => void;
+  /** Measures the clip's colour (needs the project's source video). */
+  onMeasureColor?: () => Promise<ColorCorrection | null>;
 }
 
 const checkboxLabel: React.CSSProperties = { fontSize: 12, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" };
@@ -42,6 +57,7 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
   words = [],
   sourceDuration = 0,
   onPreviewHook,
+  onMeasureColor,
 }) => {
   const { theme } = useClipperUi();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -52,6 +68,33 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
   const bar = edit.progressBar ?? null;
   const cover = edit.cover ?? null;
   const hook = edit.hook ?? null;
+  const grade = edit.colorGrade ?? null;
+  const [measuring, setMeasuring] = useState(false);
+  const [colorNote, setColorNote] = useState<string | null>(null);
+  const setGrade = (patch: Partial<ColorGrade>) =>
+    onChange((current) => {
+      const next: ColorGrade = { style: "none", intensity: 1, auto: null, ...current.colorGrade, ...patch };
+      return { ...current, colorGrade: isColorGradeActive(next) ? next : null };
+    });
+  const toggleAuto = async (on: boolean) => {
+    if (!on) {
+      setGrade({ auto: null });
+      return;
+    }
+    if (!onMeasureColor) return;
+    setMeasuring(true);
+    setColorNote(null);
+    try {
+      const correction = await onMeasureColor();
+      if (!correction) throw new Error("Couldn't read frames from this clip.");
+      setGrade({ auto: correction });
+      setColorNote(describeCorrection(correction));
+    } catch (error) {
+      setColorNote(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMeasuring(false);
+    }
+  };
   const inserts = edit.inserts ?? [];
   const brollRef = useRef<HTMLInputElement>(null);
   const [brollError, setBrollError] = useState<string | null>(null);
@@ -128,6 +171,55 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
 
   return (
     <VStack align="stretch" gap={3}>
+      <Section title="Color">
+        <HStack gap={1} flexWrap="wrap">
+          {(Object.keys(COLOR_STYLE_LABEL) as ColorStyle[]).map((style) => (
+            <Box
+              key={style}
+              as="button"
+              fontSize="xs"
+              px={2}
+              py={1}
+              borderRadius="sm"
+              border="1px solid"
+              cursor="pointer"
+              borderColor={(grade?.style ?? "none") === style ? clipperTheme.accentGlow : theme.surface.hover}
+              bg={(grade?.style ?? "none") === style ? `rgba(${clipperTheme.accentTintRgb},0.2)` : "transparent"}
+              onClick={() => onMeasureColor && setGrade({ style })}
+              opacity={onMeasureColor ? 1 : 0.5}
+            >
+              {COLOR_STYLE_LABEL[style]}
+            </Box>
+          ))}
+        </HStack>
+        {grade && grade.style !== "none" ? (
+          <SliderRow
+            label="Strength"
+            value={grade.intensity}
+            min={0.1}
+            max={1}
+            step={0.05}
+            display={`${Math.round(grade.intensity * 100)}%`}
+            onChange={(intensity) => setGrade({ intensity })}
+          />
+        ) : null}
+        <label style={checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={Boolean(grade?.auto)}
+            disabled={!onMeasureColor || measuring}
+            onChange={(e) => void toggleAuto(e.target.checked)}
+            style={{ accentColor: clipperTheme.accent }}
+          />
+          {measuring ? "Measuring the clip…" : "Auto-correct exposure, contrast and colour cast"}
+        </label>
+        <Text fontSize="xs" color={theme.text.muted}>
+          {onMeasureColor
+            ? (colorNote ?? "Applied to the picture under the captions; the preview shows it.")
+            : "Needs the project's source video (open the project)."}
+        </Text>
+      </Section>
+
       <Section title="B-roll">
         <input
           ref={brollRef}

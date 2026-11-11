@@ -11,6 +11,7 @@ import type { ClipperFrameContext } from "../types/render.types";
 import { drawClipperBranding } from "./branding-draw.util";
 import { drawClipperCaptions } from "./canvas-draw.util";
 import { resolveClipperFrameGeometry } from "./frame-geometry.util";
+import { isColorGradeActive, withColorGrade } from "./color-grade.util";
 
 function applyResolutionCap(
   dims: FrameEffectSize,
@@ -31,6 +32,11 @@ export function resolveClipperOutputSize(
   return applyResolutionCap(canonicalFormatDims(formatDef), resolutionCap);
 }
 
+/** True when frames must go through the canvas (captions, branding or a colour grade). */
+export function frameNeedsCanvas(render: ClipperFrameContext, hasBranding: boolean): boolean {
+  return render.settings.captions.enabled || hasBranding || isColorGradeActive(render.colorGrade);
+}
+
 export function formatNeedsFaceTracking(formatDef: ClipperFormatDef, settings: ClipperSettings): boolean {
   void settings;
   return formatDef.mode === "crop";
@@ -46,8 +52,10 @@ function drawBlurredFill(
   const scale = Math.max(output.width / source.width, output.height / source.height) * 1.08;
   const width = source.width * scale;
   const height = source.height * scale;
+  // Keep any colour grade already set on the context.
+  const graded = ctx.filter && ctx.filter !== "none" ? `${ctx.filter} ` : "";
   ctx.save();
-  ctx.filter = `blur(${Math.round(Math.max(output.width, output.height) * 0.025)}px) brightness(0.6)`;
+  ctx.filter = `${graded}blur(${Math.round(Math.max(output.width, output.height) * 0.025)}px) brightness(0.6)`;
   ctx.drawImage(frame, 0, 0, source.width, source.height, (output.width - width) / 2, (output.height - height) / 2, width, height);
   ctx.restore();
 }
@@ -65,11 +73,13 @@ export function drawClipperFrame(
   const geometry = resolveClipperFrameGeometry(formatDef, source, output, t, render);
   ctx.fillStyle = "#000000";
   ctx.fillRect(0, 0, output.width, output.height);
-  if (geometry.blurBackground) drawBlurredFill(ctx, frame, source, output);
-  for (const panel of geometry.panels) {
-    const { source: crop, destination } = panel;
-    ctx.drawImage(frame, crop.sx, crop.sy, crop.sw, crop.sh, destination.x, destination.y, destination.width, destination.height);
-  }
+  withColorGrade(ctx, render.colorGrade, { x: 0, y: 0, width: output.width, height: output.height }, () => {
+    if (geometry.blurBackground) drawBlurredFill(ctx, frame, source, output);
+    for (const panel of geometry.panels) {
+      const { source: crop, destination } = panel;
+      ctx.drawImage(frame, crop.sx, crop.sy, crop.sw, crop.sh, destination.x, destination.y, destination.width, destination.height);
+    }
+  });
 
   drawClipperCaptions(ctx, output, t, render);
   drawClipperBranding(ctx, output, render.settings.branding);

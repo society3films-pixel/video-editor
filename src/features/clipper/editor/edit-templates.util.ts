@@ -8,12 +8,15 @@ import { createEditId, type ClipCaptionStyle, type ClipEdit, type ClipMusic, typ
 import { highlightKeywords } from "./caption-keywords.util";
 import { addEmojiAutomatically } from "./caption-extras.util";
 import { pickHookLocally } from "./hook.util";
+import { COLOR_STYLE_LABEL, type ColorCorrection, type ColorStyle } from "../engine/render/color-grade.util";
 
 export interface EditTemplate {
   id: string;
   name: string;
   createdAt: string;
   captionStyle: ClipCaptionStyle | null;
+  /** Look only; the automatic correction is measured again for each clip it's applied to. */
+  colorGrade?: { style: ColorStyle; intensity: number; auto: boolean } | null;
   music: ClipMusic | null;
   sfx: ClipSoundEffects | null;
   progressBar: ClipProgressBar | null;
@@ -45,6 +48,7 @@ export function templateFromEdit(name: string, edit: ClipEdit): EditTemplate {
     name: name.trim() || "My template",
     createdAt: new Date().toISOString(),
     captionStyle: edit.captionStyle ?? null,
+    colorGrade: edit.colorGrade ? { style: edit.colorGrade.style, intensity: edit.colorGrade.intensity, auto: Boolean(edit.colorGrade.auto) } : null,
     music: edit.music ?? null,
     sfx: edit.sfx ?? null,
     progressBar: edit.progressBar ?? null,
@@ -70,10 +74,13 @@ export async function deleteTemplate(id: string): Promise<EditTemplate[]> {
 export function applyTemplate(
   edit: ClipEdit,
   template: EditTemplate,
-  inputs: { captionGroups: readonly CaptionGroup[]; words: readonly WordCue[]; duration: number },
+  inputs: { captionGroups: readonly CaptionGroup[]; words: readonly WordCue[]; duration: number; colorCorrection?: ColorCorrection | null },
 ): ClipEdit {
   let next: ClipEdit = {
     ...edit,
+    colorGrade: template.colorGrade
+      ? { style: template.colorGrade.style, intensity: template.colorGrade.intensity, auto: template.colorGrade.auto ? (inputs.colorCorrection ?? null) : null }
+      : (edit.colorGrade ?? null),
     captionStyle: template.captionStyle,
     music: template.music,
     sfx: template.sfx,
@@ -102,6 +109,7 @@ export function applyTemplate(
 export function describeTemplate(template: EditTemplate): string {
   const parts = [
     template.captionStyle ? "caption style" : null,
+    template.colorGrade ? `colour (${COLOR_STYLE_LABEL[template.colorGrade.style]}${template.colorGrade.auto ? " + auto" : ""})` : null,
     template.music ? `music (${template.music.name})` : null,
     template.sfx && (template.sfx.cuts || template.sfx.punchIns) ? "sound effects" : null,
     template.progressBar ? "progress bar" : null,

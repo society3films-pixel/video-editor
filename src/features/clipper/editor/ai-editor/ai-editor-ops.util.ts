@@ -7,6 +7,7 @@
  */
 import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "../caption-keywords.util";
 import { setLineEmoji } from "../caption-extras.util";
+import { COLOR_STYLE_LABEL, isColorGradeActive, type ColorStyle } from "../../engine/render/color-grade.util";
 import type { CaptionGroup, WordCue } from "../../lib/media/transcription-export.util";
 import {
   defaultScreenPanels,
@@ -43,6 +44,7 @@ export type AiEditOperation =
   | { op: "add_emoji"; line: number; emoji: string }
   | { op: "set_hook"; from_word: number; to_word: number }
   | { op: "remove_hook" }
+  | { op: "set_color"; style: string; strength?: number }
   | { op: "punch_in"; from_word: number; to_word: number; zoom?: number }
   | { op: "set_volume"; value: number }
   | { op: "set_fades"; in?: number; out?: number }
@@ -104,6 +106,7 @@ const OPS = new Set([
   "add_emoji",
   "set_hook",
   "remove_hook",
+  "set_color",
   "punch_in",
   "set_volume",
   "set_fades",
@@ -151,7 +154,7 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
   const skipped: string[] = [];
   let next: ClipEdit = { ...edit };
   const order = (op: AiEditOperation["op"]) =>
-    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "clear_highlights", "highlight_keywords", "highlight_word", "add_emoji", "set_captions_visible", "add_text", "set_hook", "remove_hook", "set_volume", "set_fades", "set_framing"].indexOf(op);
+    ["keep_only_words", "remove_words", "remove_pauses", "remove_fillers", "punch_in", "edit_caption", "clear_highlights", "highlight_keywords", "highlight_word", "add_emoji", "set_captions_visible", "add_text", "set_hook", "remove_hook", "set_color", "set_volume", "set_fades", "set_framing"].indexOf(op);
   const operations = [...plan.operations].sort((a, b) => order(a.op) - order(b.op));
   const wordText = (from: number, to: number) => {
     const text = words.slice(Math.min(from, to), Math.max(from, to) + 1).map((w) => w.text).join(" ");
@@ -283,6 +286,22 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
         }
         next = { ...next, hook: { start, end, text: wordText(operation.from_word, operation.to_word) } };
         applied.push(`Hook: “${wordText(operation.from_word, operation.to_word)}” plays first`);
+        break;
+      }
+      case "set_color": {
+        if (!context.canChangeSource) {
+          skipped.push("Colour grading needs the project's source video.");
+          break;
+        }
+        const style = String(operation.style) as ColorStyle;
+        if (!(style in COLOR_STYLE_LABEL)) {
+          skipped.push(`Unknown colour look “${operation.style}”.`);
+          break;
+        }
+        const intensity = typeof operation.strength === "number" ? Math.min(1, Math.max(0.1, operation.strength)) : 1;
+        const graded = { style, intensity, auto: next.colorGrade?.auto ?? null };
+        next = { ...next, colorGrade: isColorGradeActive(graded) ? graded : null };
+        applied.push(`Colour: ${COLOR_STYLE_LABEL[style]}`);
         break;
       }
       case "remove_hook": {

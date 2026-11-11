@@ -13,6 +13,7 @@
  */
 import type { ClipHook } from "./hook.util";
 import type { ClipInsert } from "./broll.util";
+import { isColorGradeActive, type ColorGrade } from "../engine/render/color-grade.util";
 import type { ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
 import type { ClipperCaptionPosition, ClipperCaptionSize } from "../settings/settings.util";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
@@ -78,6 +79,8 @@ export interface ClipEdit {
   inserts?: ClipInsert[];
   /** Caption look for this clip instead of the project's; null = project style. */
   captionStyle?: ClipCaptionStyle | null;
+  /** Colour correction and look (rendered from the source, under the captions). */
+  colorGrade?: ColorGrade | null;
 }
 
 export interface ClipCaptionStyle {
@@ -297,7 +300,7 @@ export function getFadeFactor(edit: Pick<ClipEdit, "fadeInSec" | "fadeOutSec">, 
 
 /** True when the edit changes the captions, which requires re-rendering from the source. */
 export function clipEditChangesCaptions(edit: ClipEdit): boolean {
-  return edit.captionGroups !== null || edit.captionsVisible !== null || Boolean(edit.captionStyle);
+  return edit.captionGroups !== null || edit.captionsVisible !== null || Boolean(edit.captionStyle) || isColorGradeActive(edit.colorGrade);
 }
 
 export function framingTracksEqual(a: ClipFramingTrack | null, b: ClipFramingTrack | null): boolean {

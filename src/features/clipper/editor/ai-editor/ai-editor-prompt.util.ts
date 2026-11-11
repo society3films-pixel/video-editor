@@ -30,6 +30,7 @@ Operations (word numbers are the [n] indexes in the transcript; ranges are inclu
 - {"op":"add_emoji","line":k,"emoji":"🔥"}          one fitting emoji that pops in above caption line k (use sparingly)
 - {"op":"set_hook","from_word":n,"to_word":m}      play this line (1.5-6s, from later in the clip) first as a teaser, then the clip from the start
 - {"op":"remove_hook"}
+- {"op":"set_color","style":"natural|warm|cool|cinematic|vibrant|moody|bw|vintage|none","strength":0.1-1}   colour look for the whole clip
 - {"op":"punch_in","from_word":n,"to_word":m,"zoom":1.05-1.5}  zoom in for emphasis
 - {"op":"set_volume","value":0-2}                  1 = unchanged
 - {"op":"set_fades","in":seconds,"out":seconds}
