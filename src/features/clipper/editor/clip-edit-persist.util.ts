@@ -54,9 +54,14 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     .filter((s) => s.end - s.start >= MIN_SEGMENT_SEC)
     .sort((a, b) => a.start - b.start);
   if (segments.length === 0) return null;
-  const textOverlays = (Array.isArray(value.textOverlays) ? value.textOverlays : []).filter(
-    (o): o is ClipTextOverlay => Boolean(o) && typeof o.text === "string" && isFiniteNumber(o.start) && isFiniteNumber(o.end),
-  );
+  const textOverlays = (Array.isArray(value.textOverlays) ? value.textOverlays : [])
+    .filter((o): o is ClipTextOverlay => Boolean(o) && typeof o.text === "string" && isFiniteNumber(o.start) && isFiniteNumber(o.end))
+    .map((o) => ({
+      ...o,
+      style: o.style === "lower-third" || o.style === "title-card" ? o.style : undefined,
+      subtitle: typeof o.subtitle === "string" ? o.subtitle : undefined,
+      accent: typeof o.accent === "string" ? o.accent : undefined,
+    }));
   const captionGroups = Array.isArray(value.captionGroups) ? (value.captionGroups as CaptionGroup[]) : null;
   return {
     segments,

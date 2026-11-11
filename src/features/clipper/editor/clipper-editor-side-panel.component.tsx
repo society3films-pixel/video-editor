@@ -12,6 +12,7 @@ import { ClipperCameraAngles } from "./clipper-camera-angles.component";
 import type { ColorCorrection } from "../engine/render/color-grade.util";
 import type { MusicSection } from "./music-detect.util";
 import {
+  createTextOverlay,
   formatEditorTime,
   type ClipEdit,
   type ClipTextOverlay,
@@ -169,10 +170,29 @@ function TextOverlayCard({
       </HStack>
       <textarea
         value={overlay.text}
-        rows={2}
+        rows={overlay.style ? 1 : 2}
         onChange={(event) => onUpdate({ text: event.target.value })}
+        placeholder={overlay.style === "lower-third" ? "Name" : overlay.style === "title-card" ? "Song title" : undefined}
         style={{ ...fieldStyle, resize: "vertical", fontFamily: "inherit" }}
       />
+      {overlay.style ? (
+        <HStack gap={2}>
+          <input
+            value={overlay.subtitle ?? ""}
+            onChange={(event) => onUpdate({ subtitle: event.target.value })}
+            placeholder={overlay.style === "lower-third" ? "Instrument / band" : "Artist"}
+            aria-label="Second line"
+            style={fieldStyle}
+          />
+          <input
+            type="color"
+            value={overlay.accent ?? "#ffd400"}
+            onChange={(event) => onUpdate({ accent: event.target.value })}
+            aria-label="Accent colour"
+            style={{ width: 28, height: 24, padding: 0, border: "none", background: "transparent" }}
+          />
+        </HStack>
+      ) : null}
       <HStack gap={2}>
         {(["start", "end"] as const).map((key) => (
           <VStack key={key} align="stretch" gap={1} flex={1}>
@@ -493,6 +513,40 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
         >
           Add text at playhead
         </OutlinedActionButton>
+        <HStack gap={2}>
+          {(
+            [
+              ["lower-third", "Lower third", "Name", "Instrument / band", 5],
+              ["title-card", "Song title", "Song title", "Artist", 4],
+            ] as const
+          ).map(([style, label, text, subtitle, seconds]) => (
+            <OutlinedActionButton
+              key={style}
+              flex={1}
+              justifyContent="center"
+              h="32px"
+              fontSize="xs"
+              disabled={outputDuration <= 0}
+              onClick={() =>
+                onChange((current) => {
+                  const base = createTextOverlay(outputTime, outputDuration);
+                  const overlay: ClipTextOverlay = {
+                    ...base,
+                    text,
+                    subtitle,
+                    style,
+                    position: style === "title-card" ? "middle" : "bottom",
+                    end: Math.min(outputDuration, base.start + seconds),
+                    accent: "#ffd400",
+                  };
+                  return { ...current, textOverlays: [...current.textOverlays, overlay] };
+                })
+              }
+            >
+              + {label}
+            </OutlinedActionButton>
+          ))}
+        </HStack>
       </Section>
     </VStack>
   );

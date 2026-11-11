@@ -62,6 +62,12 @@ export interface ClipTextOverlay {
   color: string;
   /** Draws a dark rounded box behind the text instead of an outline. */
   background: boolean;
+  /** "lower-third": name bar at the lower left; "title-card": song title band. Default: plain text. */
+  style?: "lower-third" | "title-card";
+  /** Second line: instrument / band for a lower third, artist for a title card. */
+  subtitle?: string;
+  /** Accent colour of the lower third's bar. */
+  accent?: string;
 }
 
 export interface ClipEdit {
