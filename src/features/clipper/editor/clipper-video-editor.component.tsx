@@ -504,7 +504,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     );
     // Start AI-tracked: each panel follows one person; the panels above are the fallback.
     setFramingValue(
-      { ...(framingValue ?? createDefaultFramingValue()), singleShot: false, split: panels, splitFollow: true, splitSwap: false },
+      { ...(framingValue ?? createDefaultFramingValue()), singleShot: false, split: panels, splitFollow: true, splitSwap: false, fit: undefined },
       false,
     );
   }, [framingValue, setFramingValue, source]);

@@ -361,7 +361,7 @@ export function setFramingAt(
       ...track,
       keyframes: track.keyframes.map((k) =>
         k.id === target.id
-          ? { ...k, ...value, split: value.split, splitFollow: value.splitFollow, splitSwap: value.splitSwap, splitEmphasis: value.splitEmphasis }
+          ? { ...k, ...value, split: value.split, splitFollow: value.splitFollow, splitSwap: value.splitSwap, splitEmphasis: value.splitEmphasis, fit: value.fit, slowZoom: value.slowZoom }
           : k,
       ),
     };

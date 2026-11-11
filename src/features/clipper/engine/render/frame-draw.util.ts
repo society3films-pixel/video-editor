@@ -36,6 +36,22 @@ export function formatNeedsFaceTracking(formatDef: ClipperFormatDef, settings: C
   return formatDef.mode === "crop";
 }
 
+/** The whole frame scaled to cover the output, blurred and darkened: a background for "fit" framing. */
+function drawBlurredFill(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  frame: CanvasImageSource,
+  source: FrameEffectSize,
+  output: FrameEffectSize,
+): void {
+  const scale = Math.max(output.width / source.width, output.height / source.height) * 1.08;
+  const width = source.width * scale;
+  const height = source.height * scale;
+  ctx.save();
+  ctx.filter = `blur(${Math.round(Math.max(output.width, output.height) * 0.025)}px) brightness(0.6)`;
+  ctx.drawImage(frame, 0, 0, source.width, source.height, (output.width - width) / 2, (output.height - height) / 2, width, height);
+  ctx.restore();
+}
+
 /** Full per-frame draw: crop/collage framing + captions + branding. Shared by the live preview and the final render. */
 export function drawClipperFrame(
   formatDef: ClipperFormatDef,
@@ -49,6 +65,7 @@ export function drawClipperFrame(
   const geometry = resolveClipperFrameGeometry(formatDef, source, output, t, render);
   ctx.fillStyle = "#000000";
   ctx.fillRect(0, 0, output.width, output.height);
+  if (geometry.blurBackground) drawBlurredFill(ctx, frame, source, output);
   for (const panel of geometry.panels) {
     const { source: crop, destination } = panel;
     ctx.drawImage(frame, crop.sx, crop.sy, crop.sw, crop.sh, destination.x, destination.y, destination.width, destination.height);

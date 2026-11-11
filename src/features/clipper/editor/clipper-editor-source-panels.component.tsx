@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, HStack, Text, VStack } from "@chakra-ui/react";
-import { ArrowUpDown, Columns2, Crosshair, Diamond, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, Square, Wand, X } from "lucide-react";
+import { ArrowUpDown, Columns2, Crosshair, Diamond, Maximize, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, Square, Wand, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
@@ -257,7 +257,7 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
   const current = value ?? DEFAULT_VALUE;
   const update = (patch: Partial<ClipperFramingValue>) => onChange({ ...current, ...patch });
   const split = isForcedSplit(current);
-  const layout: "ai" | "single" | "split" = split ? "split" : current.singleShot ? "single" : "ai";
+  const layout: "ai" | "single" | "split" | "fit" = split ? "split" : current.fit === "blur" ? "fit" : current.singleShot ? "single" : "ai";
   const panelNames = sideBySide ? ["Left panel", "Right panel"] : ["Top panel", "Bottom panel"];
   const updatePanel = (index: number, patch: Partial<ClipperSplitPanel>) =>
     update({ split: current.split!.map((panel, i) => (i === index ? { ...panel, ...patch } : panel)) });
@@ -281,14 +281,14 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
         <HStack gap={2}>
           <ChoiceButton
             selected={layout === "ai"}
-            onClick={() => layout !== "ai" && update({ singleShot: false, split: undefined })}
+            onClick={() => layout !== "ai" && update({ singleShot: false, split: undefined, fit: undefined })}
             title="Let the AI choose between one shot and split screen"
           >
             <Wand size={13} /> AI decides
           </ChoiceButton>
           <ChoiceButton
             selected={layout === "single"}
-            onClick={() => layout !== "single" && update({ singleShot: true, split: undefined })}
+            onClick={() => layout !== "single" && update({ singleShot: true, split: undefined, fit: undefined })}
             title="Always one shot, never split screen"
           >
             <Square size={13} /> One shot
@@ -299,6 +299,13 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
             title="Always split screen, with two panels you position"
           >
             <Columns2 size={13} /> Split
+          </ChoiceButton>
+          <ChoiceButton
+            selected={layout === "fit"}
+            onClick={() => layout !== "fit" && update({ fit: "blur", split: undefined, singleShot: false, mode: "auto", x: 0, y: 0, zoom: 1, slowZoom: undefined })}
+            title="Show the whole frame over a blurred copy, nothing cropped (good for wide shots)"
+          >
+            <Maximize size={13} /> Whole frame
           </ChoiceButton>
         </HStack>
 
@@ -396,6 +403,22 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
               {current.splitFollow ? "Swap people" : "Swap panels"}
             </OutlinedActionButton>
           </>
+        ) : layout === "fit" ? (
+          <>
+            <Text fontSize="xs" color={theme.text.muted}>
+              The whole picture is shown, with a blurred copy filling the rest of the frame. Use Size to fill more
+              of the frame (the sides get cropped).
+            </Text>
+            <SliderRow
+              label="Size"
+              value={current.zoom}
+              min={1}
+              max={2}
+              step={0.05}
+              display={`${Math.round(current.zoom * 100)}%`}
+              onChange={(zoom) => update({ zoom })}
+            />
+          </>
         ) : (
           <>
             <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
@@ -440,6 +463,15 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
                 <SliderRow label="Nudge up / down" value={current.y} min={-1} max={1} step={0.01} display={`${Math.round(current.y * 100)}`} onChange={(y) => update({ y })} />
               </>
             )}
+            <SliderRow
+              label="Slow zoom over the shot"
+              value={current.slowZoom ?? 0}
+              min={0}
+              max={0.3}
+              step={0.01}
+              display={current.slowZoom ? `+${Math.round(current.slowZoom * 100)}%` : "Off"}
+              onChange={(slowZoom) => update({ slowZoom: slowZoom > 0.005 ? slowZoom : undefined })}
+            />
           </>
         )}
         <HStack gap={2}>

@@ -41,7 +41,7 @@ export type AiEditOperation =
   | { op: "punch_in"; from_word: number; to_word: number; zoom?: number }
   | { op: "set_volume"; value: number }
   | { op: "set_fades"; in?: number; out?: number }
-  | { op: "set_framing"; shot: number; layout: "ai" | "one_shot" | "split_ai" | "split_manual" };
+  | { op: "set_framing"; shot: number; layout: "ai" | "one_shot" | "split_ai" | "split_manual" | "whole_frame" | "slow_zoom" };
 
 export interface AiEditPlan {
   summary: string;
@@ -321,9 +321,11 @@ export function applyAiEditPlan(edit: ClipEdit, plan: AiEditPlan, context: AiEdi
         if (operation.layout === "one_shot") value = { ...FRAMING_DEFAULT, singleShot: true };
         if (operation.layout === "split_ai") value = { ...FRAMING_DEFAULT, split: defaultSplitPanels(), splitFollow: true };
         if (operation.layout === "split_manual") value = { ...FRAMING_DEFAULT, split: defaultSplitPanels() };
+        if (operation.layout === "whole_frame") value = { ...FRAMING_DEFAULT, fit: "blur" };
+        if (operation.layout === "slow_zoom") value = { ...FRAMING_DEFAULT, slowZoom: 0.12 };
         const cleared = { ...track, keyframes: track.keyframes.filter((k) => shotRangeAt(boundaries, k.t, duration).index !== shot.index) };
         next = { ...next, framing: value ? setFramingAt(cleared, boundaries, middle, value) : cleared };
-        const label = { ai: "AI framing", one_shot: "one shot", split_ai: "AI-tracked split screen", split_manual: "split screen" }[operation.layout];
+        const label = { ai: "AI framing", one_shot: "one shot", split_ai: "AI-tracked split screen", split_manual: "split screen", whole_frame: "whole frame over a blurred background", slow_zoom: "slow zoom" }[operation.layout];
         applied.push(`Shot ${operation.shot + 1}: ${label ?? operation.layout}`);
         break;
       }

@@ -15,8 +15,11 @@ import { resolveClipperLayoutRender } from "./layout-resolvers.util";
 import {
   applyFramingOverride,
   evaluateClipFraming,
+  clipShotRangeAt,
+  fitWholeFrame,
   forcedSplitLayout,
   isForcedSplit,
+  slowZoomCrop,
   type ClipFramingRender,
 } from "./framing-override.util";
 import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
@@ -33,6 +36,8 @@ export interface ClipperFramePanelGeometry {
 export interface ClipperFrameGeometry {
   mode: "single-crop" | "split" | "contain";
   panels: ClipperFramePanelGeometry[];
+  /** Fill behind the panels with a blurred copy of the whole frame. */
+  blurBackground?: boolean;
 }
 
 // A smart-crop blob is immutable for the lifetime of a render/session.  The
@@ -93,6 +98,9 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
   const branch = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
   const localT = render.segments?.length ? sourceTimeToLocalTime(render.segments, t) : Math.max(0, t);
   const override = render.framing?.track.keyframes.length ? evaluateClipFraming(render.framing, localT) : undefined;
+  if (override?.fit === "blur" && !isForcedSplit(override) && formatDef.mode === "crop") {
+    return { mode: "contain", panels: [fitWholeFrame(source, output, override.zoom)], blurBackground: true };
+  }
   if (isForcedSplit(override) && formatDef.mode === "crop") {
     let faces: Array<{ x: number; y: number } | null> | undefined;
     if (override!.splitFollow && render.faceCache) {
@@ -121,5 +129,14 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
     ?? cropRectForCentroid(source.width, source.height, 0.5, 0.5, output.width / output.height);
   let finalCrop = coverCrop(clampToContent(crop, render.smartCropAnalysis?.contentRect, source), output);
   if (override) finalCrop = applyFramingOverride(finalCrop, override, source, output);
+  if (override?.slowZoom && render.framing) {
+    const duration = render.segments?.length
+      ? render.segments.reduce((sum, segment) => sum + Math.max(0, segment.endSec - segment.startSec), 0)
+      : Number.POSITIVE_INFINITY;
+    const shot = clipShotRangeAt(render.framing, localT, duration);
+    if (Number.isFinite(shot.end) && shot.end > shot.start) {
+      finalCrop = slowZoomCrop(finalCrop, override.slowZoom, (localT - shot.start) / (shot.end - shot.start), source);
+    }
+  }
   return { mode: plannedLayout?.mode ?? "single-crop", panels: [{ source: finalCrop, destination: { x: 0, y: 0, width: output.width, height: output.height } }] };
 }

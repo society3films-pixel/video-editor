@@ -27,6 +27,13 @@ export interface ClipperFramingValue {
   splitSwap?: boolean;
   /** AI-tracked split: grow the panel of whoever is talking (needs `ClipFramingTrack.speakers`). */
   splitEmphasis?: boolean;
+  /**
+   * "blur": show the whole source frame (scaled to fit, `zoom` crops in a little) over a blurred,
+   * darkened copy that fills the rest. Ignored for split screens.
+   */
+  fit?: "blur";
+  /** Slow push-in over the shot (Ken Burns): 0.1 = 10% closer at the end of the shot than at its start. */
+  slowZoom?: number;
 }
 
 /** One panel of a forced split screen: a camera centred on `x`/`y` (0..1 of the source). */
@@ -134,6 +141,8 @@ function toValue(keyframe: ClipFramingKeyframe): ClipperFramingValue {
     if (keyframe.splitSwap) value.splitSwap = true;
     if (keyframe.splitEmphasis) value.splitEmphasis = true;
   }
+  if (keyframe.fit) value.fit = keyframe.fit;
+  if (keyframe.slowZoom) value.slowZoom = keyframe.slowZoom;
   return value;
 }
 
@@ -165,7 +174,8 @@ export function evaluateFramingTrack(
     !next ||
     next.t - previous.t < 1e-6 ||
     isForcedSplit(next) !== isForcedSplit(previous) ||
-    Boolean(next.splitFollow) !== Boolean(previous.splitFollow)
+    Boolean(next.splitFollow) !== Boolean(previous.splitFollow) ||
+    (next.fit ?? null) !== (previous.fit ?? null)
   ) {
     return toValue(previous);
   }
@@ -192,6 +202,45 @@ export function evaluateFramingTrack(
     y: previous.y + (next.y - previous.y) * u,
     zoom: previous.zoom + (next.zoom - previous.zoom) * u,
     singleShot: previous.singleShot,
+  };
+}
+
+/** Shot (clip-local range) containing `t`, with the user's extra shot changes. */
+export function clipShotRangeAt(render: ClipFramingRender, t: number, duration: number) {
+  return shotRangeAt(mergeShotBoundaries(render.aiShotBoundaries, render.track.extraShotBoundaries), t, duration);
+}
+
+/** Crop narrowed for a slow push-in: `progress` 0..1 through the shot, eased. */
+export function slowZoomCrop(crop: ClipperCropRect, amount: number, progress: number, source: FrameEffectSize): ClipperCropRect {
+  const u = clamp(progress, 0, 1);
+  const factor = 1 + clamp(amount, 0, 0.5) * u * u * (3 - 2 * u);
+  const sw = crop.sw / factor;
+  const sh = crop.sh / factor;
+  // Zoom towards a point a little above centre, where faces usually are.
+  const cx = crop.sx + crop.sw / 2;
+  const cy = crop.sy + crop.sh * 0.42;
+  return {
+    sx: clamp(cx - sw / 2, 0, source.width - sw),
+    sy: clamp(cy - sh * 0.42, 0, source.height - sh),
+    sw,
+    sh,
+  };
+}
+
+/** Whole frame scaled to fit the output, centred; zoom > 1 enlarges it, cropping what spills over. */
+export function fitWholeFrame(
+  source: FrameEffectSize,
+  output: FrameEffectSize,
+  zoom: number,
+): { source: ClipperCropRect; destination: { x: number; y: number; width: number; height: number } } {
+  const scale = Math.min(output.width / source.width, output.height / source.height) * clamp(zoom || 1, 1, 3);
+  const width = Math.min(output.width, source.width * scale);
+  const height = Math.min(output.height, source.height * scale);
+  const sw = width / scale;
+  const sh = height / scale;
+  return {
+    source: { sx: (source.width - sw) / 2, sy: (source.height - sh) / 2, sw, sh },
+    destination: { x: (output.width - width) / 2, y: (output.height - height) / 2, width, height },
   };
 }
 
