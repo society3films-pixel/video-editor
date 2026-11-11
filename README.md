@@ -96,6 +96,8 @@ The **Captions** tab lets you fix caption wording line by line, remove lines, or
 
 **Watch folder.** On the home page, choose a folder: each new video dropped in it becomes a project that's transcribed, clipped and (optionally) rendered with no clicks, one at a time, while the app is open on the home page.
 
+**Music interviews.** Edit tab → **Songs and performances** finds where music is playing: Auto edit never cuts inside a song, voice clean-up and background music step aside for it, songs can be brought to the talking level, and captions can be hidden during songs. **Camera angles** adds other cameras' recordings, lined up with the main camera by their sound, for chosen parts or automatically during songs (the Premiere / Resolve export puts them on V2). Parts can start their sound early or late (**J/L cuts**, with **J-cut into songs**). The **B-roll library** keeps a project's shots with tags (from file names, or an AI vision model) and suggests shots where a tag is mentioned. The **Text** tab cuts by sentence and finds **interviewer questions** to cut or turn into on-screen cards. **Lower thirds** and **song title** cards are text styles. In Preview, **Find performance moments** adds the strongest 20-40 s of each song and explain-then-play clips, and **Long-form edit** has the AI build a story from the whole interview with performances between topics.
+
 Captions and framing are burned into exported files, so these changes re-render the clip from the project's source video; they are available while the project's video is loaded and the clip's start and end match the export.
 
 Shortcuts: `Space` play/pause, `S` split at playhead, `Delete` remove selected part, `Ctrl+Z` undo, `←`/`→` step a frame (`Shift` for 1 second).
