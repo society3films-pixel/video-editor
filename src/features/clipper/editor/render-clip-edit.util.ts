@@ -21,6 +21,7 @@ import { createAudioExtrasMixer, decodeAudioFile, soundEffectEvents, type Decode
 import { loadEditorAsset } from "./editor-assets.util";
 import { hookDuration, renderSegmentsFor } from "./hook.util";
 import { activeInserts, loadInsertMedia } from "./broll.util";
+import { analyzeStabilization, correctionAt } from "./stabilize.util";
 
 export interface RenderClipEditOptions {
   /** Stream the MP4 straight to disk. Omit to render into memory. */
@@ -46,8 +47,24 @@ function even(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2);
 }
 
-function drawFrame(ctx: OffscreenCanvasRenderingContext2D, sample: VideoSample, zoom: number, center?: { x: number; y: number }): void {
+function drawFrame(
+  ctx: OffscreenCanvasRenderingContext2D,
+  sample: VideoSample,
+  zoom: number,
+  center?: { x: number; y: number },
+  shake?: { dx: number; dy: number; zoom: number },
+): void {
   const { width, height } = ctx.canvas;
+  if (shake) {
+    // Stabilised: shift by the correction, zoomed in enough that the edges stay covered.
+    ctx.save();
+    ctx.translate(width / 2 + shake.dx * width * shake.zoom, height / 2 + shake.dy * height * shake.zoom);
+    ctx.scale(shake.zoom, shake.zoom);
+    ctx.translate(-width / 2, -height / 2);
+    drawFrame(ctx, sample, zoom, center);
+    ctx.restore();
+    return;
+  }
   if (zoom > 1) {
     const rect = punchInRect(width, height, zoom, center);
     sample.draw(ctx, rect.x, rect.y, rect.width, rect.height);
@@ -146,6 +163,11 @@ export async function renderClipEdit(
     }
     const coverFirstFrames = coverCanvas && edit.cover?.firstFrames ? coverCanvas : null;
     const insertMedia = edit.inserts?.length ? await loadInsertMedia(edit.inserts) : null;
+    // Stabilising measures the whole file first (about a fifth of the save time).
+    const stabilizePath = edit.stabilize
+      ? await analyzeStabilization(file, edit.stabilize, { signal, onProgress: (ratio) => onProgress?.(ratio * 0.2) })
+      : null;
+    const progressBase = stabilizePath ? 0.2 : 0;
 
     const onAbort = () => void output.cancel();
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -178,7 +200,13 @@ export async function renderClipEdit(
             if (coverFirstFrames && timestamp < COVER_FIRST_FRAMES_SEC) {
               ctx.drawImage(coverFirstFrames, 0, 0);
             } else {
-              drawFrame(ctx, sample, segment.zoom ?? 1, segment.zoomCenter);
+              drawFrame(
+                ctx,
+                sample,
+                segment.zoom ?? 1,
+                segment.zoomCenter,
+                stabilizePath ? { ...correctionAt(stabilizePath, sample.timestamp), zoom: stabilizePath.zoom } : undefined,
+              );
               const textTime = timestamp - hookLength;
               const insertFrames = new Map<string, { media: CanvasImageSource; width: number; height: number } | null>();
               if (insertMedia) {
@@ -198,7 +226,7 @@ export async function renderClipEdit(
             } finally {
               outSample.close();
             }
-            onProgress?.(Math.min(0.99, timestamp / outputDuration));
+            onProgress?.(Math.min(0.99, progressBase + (1 - progressBase) * (timestamp / outputDuration)));
           } finally {
             sample.close();
           }

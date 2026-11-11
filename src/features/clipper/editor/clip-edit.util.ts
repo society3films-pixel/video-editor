@@ -13,6 +13,7 @@
  */
 import type { ClipHook } from "./hook.util";
 import type { ClipInsert } from "./broll.util";
+import type { StabilizeSettings } from "./stabilize.util";
 import { isColorGradeActive, type ColorGrade } from "../engine/render/color-grade.util";
 import type { ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
 import type { ClipperCaptionPosition, ClipperCaptionSize } from "../settings/settings.util";
@@ -83,6 +84,8 @@ export interface ClipEdit {
   captionStyle?: ClipCaptionStyle | null;
   /** Colour correction and look (rendered from the source, under the captions). */
   colorGrade?: ColorGrade | null;
+  /** Remove camera shake when saving. */
+  stabilize?: StabilizeSettings | null;
 }
 
 export interface ClipCaptionStyle {
@@ -327,7 +330,8 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     !edit.cover &&
     !edit.bleeps?.length &&
     !edit.hook &&
-    !edit.inserts?.length
+    !edit.inserts?.length &&
+    !edit.stabilize
   );
 }
 

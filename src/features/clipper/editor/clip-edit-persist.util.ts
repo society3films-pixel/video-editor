@@ -62,6 +62,10 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
     cover: parseCover(value.cover),
+    stabilize:
+      value.stabilize && isFiniteNumber(value.stabilize.strength)
+        ? { strength: Math.min(1, Math.max(0, value.stabilize.strength)) }
+        : null,
     colorGrade:
       value.colorGrade && typeof value.colorGrade.style === "string" && value.colorGrade.style in COLOR_STYLE_LABEL
         ? {

@@ -220,6 +220,33 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
         </Text>
       </Section>
 
+      <Section title="Stabilize">
+        <label style={checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={Boolean(edit.stabilize)}
+            onChange={(e) => onChange((current) => ({ ...current, stabilize: e.target.checked ? { strength: 0.6 } : null }))}
+            style={{ accentColor: clipperTheme.accent }}
+          />
+          Remove camera shake
+        </label>
+        {edit.stabilize ? (
+          <SliderRow
+            label="Strength"
+            value={edit.stabilize.strength}
+            min={0.2}
+            max={1}
+            step={0.05}
+            display={`${Math.round(edit.stabilize.strength * 100)}%`}
+            onChange={(strength) => onChange((current) => ({ ...current, stabilize: { strength } }))}
+          />
+        ) : null}
+        <Text fontSize="xs" color={theme.text.muted}>
+          For handheld footage. Applied when you save (the picture zooms in slightly to hide the edges); the preview
+          isn't stabilised.
+        </Text>
+      </Section>
+
       <Section title="B-roll">
         <input
           ref={brollRef}
