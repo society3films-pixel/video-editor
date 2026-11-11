@@ -34,6 +34,12 @@ export interface ClipperFramingValue {
   fit?: "blur";
   /** Slow push-in over the shot (Ken Burns): 0.1 = 10% closer at the end of the shot than at its start. */
   slowZoom?: number;
+  /**
+   * Screen + face: with `split`, panel 0 is a region of a screen recording or slides (x/y centre,
+   * zoom 1 = the whole frame) shown uncropped, panel 1 follows the biggest face. `splitSwap` puts
+   * the face first.
+   */
+  screen?: boolean;
 }
 
 /** One panel of a forced split screen: a camera centred on `x`/`y` (0..1 of the source). */
@@ -142,6 +148,7 @@ function toValue(keyframe: ClipFramingKeyframe): ClipperFramingValue {
     if (keyframe.splitEmphasis) value.splitEmphasis = true;
   }
   if (keyframe.fit) value.fit = keyframe.fit;
+  if (keyframe.screen && isForcedSplit(keyframe)) value.screen = true;
   if (keyframe.slowZoom) value.slowZoom = keyframe.slowZoom;
   return value;
 }
@@ -175,7 +182,8 @@ export function evaluateFramingTrack(
     next.t - previous.t < 1e-6 ||
     isForcedSplit(next) !== isForcedSplit(previous) ||
     Boolean(next.splitFollow) !== Boolean(previous.splitFollow) ||
-    (next.fit ?? null) !== (previous.fit ?? null)
+    (next.fit ?? null) !== (previous.fit ?? null) ||
+    Boolean(next.screen) !== Boolean(previous.screen)
   ) {
     return toValue(previous);
   }
@@ -225,6 +233,72 @@ export function slowZoomCrop(crop: ClipperCropRect, amount: number, progress: nu
     sw,
     sh,
   };
+}
+
+/** Default screen + face panels: the whole screen, and a close-up of the presenter. */
+export function defaultScreenPanels(): ClipperSplitPanel[] {
+  return [
+    { x: 0.5, y: 0.5, zoom: 1 },
+    { x: 0.85, y: 0.8, zoom: 3 },
+  ];
+}
+
+/** Share of a portrait output the screen panel takes (a 16:9 screen fits its width with a little room). */
+const SCREEN_SHARE_PORTRAIT = 0.4;
+/** Share of a landscape output's width the screen panel takes; the face gets the rest. */
+const SCREEN_SHARE_LANDSCAPE = 0.7;
+
+/**
+ * Screen + face layout. The screen region is shown whole (fitted, so text stays readable) inside
+ * its area; the face panel is a normal crop, centred on the tracked face when there is one.
+ */
+export function screenFaceLayout(
+  panels: readonly ClipperSplitPanel[],
+  source: FrameEffectSize,
+  output: FrameEffectSize,
+  face: { x: number; y: number } | null,
+  faceFirst: boolean,
+): SplitPanelLayout[] {
+  const landscape = output.width > output.height;
+  const share = landscape ? SCREEN_SHARE_LANDSCAPE : SCREEN_SHARE_PORTRAIT;
+  const screenArea = landscape
+    ? { x: faceFirst ? output.width - evenFloor(output.width * share) : 0, y: 0, width: evenFloor(output.width * share), height: output.height }
+    : { x: 0, y: faceFirst ? output.height - evenFloor(output.height * share) : 0, width: output.width, height: evenFloor(output.height * share) };
+  const faceArea = landscape
+    ? { x: faceFirst ? 0 : screenArea.width, y: 0, width: output.width - screenArea.width, height: output.height }
+    : { x: 0, y: faceFirst ? 0 : screenArea.height, width: output.width, height: output.height - screenArea.height };
+
+  const screenPanel = panels[0] ?? { x: 0.5, y: 0.5, zoom: 1 };
+  const zoom = clamp(screenPanel.zoom || 1, 1, 4);
+  const sw = source.width / zoom;
+  const sh = source.height / zoom;
+  const screenCrop = {
+    sx: clamp(screenPanel.x * source.width - sw / 2, 0, source.width - sw),
+    sy: clamp(screenPanel.y * source.height - sh / 2, 0, source.height - sh),
+    sw,
+    sh,
+  };
+  const scale = Math.min(screenArea.width / sw, screenArea.height / sh);
+  const screenDestination = {
+    x: screenArea.x + (screenArea.width - sw * scale) / 2,
+    y: screenArea.y + (screenArea.height - sh * scale) / 2,
+    width: sw * scale,
+    height: sh * scale,
+  };
+
+  const facePanel = panels[1] ?? panels[0]!;
+  const size = splitPanelCrop({ ...facePanel, x: 0.5, y: 0.5 }, faceArea, source);
+  const centerX = (face ? face.x : facePanel.x) * source.width + (face ? (facePanel.dx ?? 0) * size.sw : 0);
+  const centerY = (face ? face.y : facePanel.y) * source.height + (face ? (TRACKED_FACE_HEADROOM + (facePanel.dy ?? 0)) * size.sh : 0);
+  const faceCrop = {
+    ...size,
+    sx: clamp(centerX - size.sw / 2, 0, source.width - size.sw),
+    sy: clamp(centerY - size.sh / 2, 0, source.height - size.sh),
+  };
+  return [
+    { destination: screenDestination, source: screenCrop },
+    { destination: faceArea, source: faceCrop },
+  ];
 }
 
 /** Whole frame scaled to fit the output, centred; zoom > 1 enlarges it, cropping what spills over. */

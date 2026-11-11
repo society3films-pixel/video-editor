@@ -10,6 +10,7 @@ import type { FaceBoxSample } from "../shared/face-samples.util";
 import type { ClipperClipSegmentWindow } from "../engine/segmentation/segmentation.types";
 import { selectDominantFacePair, facesFitSingleCrop } from "../engine/reframe/collage/track.util";
 import {
+  defaultScreenPanels,
   defaultSplitPanels,
   shotIndexAt,
   type ClipFramingKeyframe,
@@ -120,6 +121,19 @@ function rangeToLocal(segments: readonly ClipperClipSegmentWindow[], time: numbe
  * Switches shots to AI-tracked split screen where two people are on screen but don't both fit
  * the output crop most of the time. Shots that already have the user's framing are left alone.
  */
+/**
+ * One small face near an edge or corner of a wide frame: the usual look of a screen recording or
+ * slides with a presenter webcam overlay.
+ */
+export function looksLikeWebcamOverlay(sample: FaceBoxSample): boolean {
+  if (sample.faces.length !== 1 || sample.frameW <= sample.frameH) return false;
+  const face = sample.faces[0]!;
+  const area = (face.width * face.height) / (sample.frameW * sample.frameH);
+  const cx = (face.x + face.width / 2) / sample.frameW;
+  const cy = (face.y + face.height / 2) / sample.frameH;
+  return area < 0.02 && (cx < 0.25 || cx > 0.75) && (cy < 0.3 || cy > 0.6);
+}
+
 export function planFramingFixes(
   track: ClipFramingTrack,
   aiShotBoundaries: readonly number[],
@@ -130,11 +144,14 @@ export function planFramingFixes(
 ): FramingFixPlan {
   const boundaries = framingShotBoundaries(track, aiShotBoundaries);
   const shotCount = boundaries.length + 1;
-  const stats = Array.from({ length: shotCount }, () => ({ twoPerson: 0, dontFit: 0 }));
+  const stats = Array.from({ length: shotCount }, () => ({ twoPerson: 0, dontFit: 0, samples: 0, webcam: 0 }));
 
   for (const sample of faceSamples) {
     const local = rangeToLocal(clipSegments, sample.time);
-    if (local === null || sample.faces.length < 2) continue;
+    if (local === null) continue;
+    stats[shotIndexAt(boundaries, local)]!.samples++;
+    if (looksLikeWebcamOverlay(sample)) stats[shotIndexAt(boundaries, local)]!.webcam++;
+    if (sample.faces.length < 2) continue;
     const pair = selectDominantFacePair(sample.faces);
     if (!pair) continue;
     const shot = stats[shotIndexAt(boundaries, local)]!;
@@ -146,7 +163,26 @@ export function planFramingFixes(
   const added: ClipFramingKeyframe[] = [];
   const fixedShots: number[] = [];
   stats.forEach((shot, index) => {
-    if (keyframed.has(index) || shot.twoPerson < MIN_TWO_PERSON_SAMPLES) return;
+    if (keyframed.has(index)) return;
+    // A screen recording with a small presenter cam: show the screen whole and the face apart.
+    if (shot.samples >= MIN_TWO_PERSON_SAMPLES && shot.webcam / shot.samples >= 0.6) {
+      const start = index === 0 ? 0 : boundaries[index - 1]!;
+      const end = index < boundaries.length ? boundaries[index]! : duration;
+      added.push({
+        id: createEditId("kf"),
+        t: (start + end) / 2,
+        mode: "auto",
+        x: 0,
+        y: 0,
+        zoom: 1,
+        singleShot: false,
+        split: defaultScreenPanels(),
+        screen: true,
+      });
+      fixedShots.push(index);
+      return;
+    }
+    if (shot.twoPerson < MIN_TWO_PERSON_SAMPLES) return;
     if (shot.dontFit / shot.twoPerson < SPLIT_SHARE_THRESHOLD) return;
     const start = index === 0 ? 0 : boundaries[index - 1]!;
     const end = index < boundaries.length ? boundaries[index]! : duration;

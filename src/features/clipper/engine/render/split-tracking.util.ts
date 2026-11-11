@@ -63,6 +63,30 @@ export function buildSplitFaceTracks(samples: readonly FaceBoxSample[]): SplitFa
   return { left, right };
 }
 
+/** The biggest face over time (the presenter in a screen recording), smoothed like the split tracks. */
+export function buildLargestFaceTrack(samples: readonly FaceBoxSample[]): CentroidSample[] {
+  const track: CentroidSample[] = [];
+  const follower: Follower = { value: null, time: 0 };
+  for (const sample of samples) {
+    if (!sample.faces.length || sample.frameW <= 0 || sample.frameH <= 0) continue;
+    const largest = sample.faces.reduce((best, face) => (face.width * face.height > best.width * best.height ? face : best));
+    const cut = sample.sceneCut === true;
+    track.push({ t: sample.time, ...follow(follower, faceToCentroid(largest, sample.frameW, sample.frameH), sample.time, cut), cut });
+  }
+  return track;
+}
+
+const largestCache = new WeakMap<FaceSampleCache, { revision: number; track: CentroidSample[] }>();
+
+export function largestFaceTrackFor(faceCache: FaceSampleCache): CentroidSample[] {
+  const revision = faceCache.sampleRevision;
+  const cached = largestCache.get(faceCache);
+  if (cached && cached.revision === revision) return cached.track;
+  const track = buildLargestFaceTrack(faceCache.sortedSamples());
+  largestCache.set(faceCache, { revision, track });
+  return track;
+}
+
 const trackCache = new WeakMap<FaceSampleCache, { revision: number; tracks: SplitFaceTracks }>();
 
 /** Tracks for a face cache, rebuilt only when its samples change. */

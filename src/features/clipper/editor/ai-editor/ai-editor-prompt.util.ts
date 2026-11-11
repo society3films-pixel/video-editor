@@ -30,7 +30,7 @@ Operations (word numbers are the [n] indexes in the transcript; ranges are inclu
 - {"op":"punch_in","from_word":n,"to_word":m,"zoom":1.05-1.5}  zoom in for emphasis
 - {"op":"set_volume","value":0-2}                  1 = unchanged
 - {"op":"set_fades","in":seconds,"out":seconds}
-- {"op":"set_framing","shot":s,"layout":"ai|one_shot|split_ai|split_manual|whole_frame|slow_zoom"}   split_ai = split screen where the AI follows each person; whole_frame = nothing cropped, blurred fill (wide shots, 3+ people); slow_zoom = AI camera with a slow push-in
+- {"op":"set_framing","shot":s,"layout":"ai|one_shot|split_ai|split_manual|whole_frame|slow_zoom|screen_face"}   split_ai = split screen where the AI follows each person; whole_frame = nothing cropped, blurred fill (wide shots, 3+ people); slow_zoom = AI camera with a slow push-in; screen_face = screen recording/slides uncropped plus the presenter's face
 
 Rules:
 - Only use word, line and shot numbers that appear below.

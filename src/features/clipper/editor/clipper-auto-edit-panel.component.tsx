@@ -48,7 +48,7 @@ export const ClipperAutoEditPanel: React.FC<ClipperAutoEditPanelProps> = ({
     {
       key: "fixFraming",
       label: "Fix framing",
-      description: "Switches shots where two people don't fit to AI-tracked split screen.",
+      description: "Switches shots where two people don't fit to AI-tracked split screen, and screen recordings with a small webcam face to Screen + face.",
       unavailable: hasFaceTracking ? undefined : "Needs the project's face tracking (open from a loaded project).",
     },
     {

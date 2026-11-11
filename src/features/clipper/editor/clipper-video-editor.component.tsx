@@ -543,7 +543,10 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       if (event.button !== 0) return;
       const canvas = event.currentTarget;
       const video = videoRef.current;
-      const canDrag = Boolean(source && tab === "framing" && edit?.framing && video?.videoWidth);
+      // Screen + face and Whole frame are set with sliders; dragging is for crops.
+      const canDrag = Boolean(
+        source && tab === "framing" && edit?.framing && video?.videoWidth && !framingValue?.screen && framingValue?.fit !== "blur",
+      );
       const startX = event.clientX;
       const startY = event.clientY;
       const rect = canvas.getBoundingClientRect();

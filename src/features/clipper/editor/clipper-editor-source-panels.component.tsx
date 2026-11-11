@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, HStack, Text, VStack } from "@chakra-ui/react";
-import { ArrowUpDown, Columns2, Crosshair, Diamond, Maximize, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, Square, Wand, X } from "lucide-react";
+import { ArrowUpDown, Columns2, Crosshair, Diamond, Maximize, Monitor, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, Square, Wand, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
@@ -8,6 +8,7 @@ import { clipperTheme } from "../shared/theme.util";
 import { captionGroupText, formatEditorTime } from "./clip-edit.util";
 import { countKeywords } from "./caption-keywords.util";
 import {
+  defaultScreenPanels,
   isForcedSplit,
   type ClipFramingKeyframe,
   type ClipperFramingValue,
@@ -257,7 +258,15 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
   const current = value ?? DEFAULT_VALUE;
   const update = (patch: Partial<ClipperFramingValue>) => onChange({ ...current, ...patch });
   const split = isForcedSplit(current);
-  const layout: "ai" | "single" | "split" | "fit" = split ? "split" : current.fit === "blur" ? "fit" : current.singleShot ? "single" : "ai";
+  const layout: "ai" | "single" | "split" | "fit" | "screen" = split
+    ? current.screen
+      ? "screen"
+      : "split"
+    : current.fit === "blur"
+      ? "fit"
+      : current.singleShot
+        ? "single"
+        : "ai";
   const panelNames = sideBySide ? ["Left panel", "Right panel"] : ["Top panel", "Bottom panel"];
   const updatePanel = (index: number, patch: Partial<ClipperSplitPanel>) =>
     update({ split: current.split!.map((panel, i) => (i === index ? { ...panel, ...patch } : panel)) });
@@ -281,14 +290,14 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
         <HStack gap={2}>
           <ChoiceButton
             selected={layout === "ai"}
-            onClick={() => layout !== "ai" && update({ singleShot: false, split: undefined, fit: undefined })}
+            onClick={() => layout !== "ai" && update({ singleShot: false, split: undefined, fit: undefined, screen: undefined })}
             title="Let the AI choose between one shot and split screen"
           >
             <Wand size={13} /> AI decides
           </ChoiceButton>
           <ChoiceButton
             selected={layout === "single"}
-            onClick={() => layout !== "single" && update({ singleShot: true, split: undefined, fit: undefined })}
+            onClick={() => layout !== "single" && update({ singleShot: true, split: undefined, fit: undefined, screen: undefined })}
             title="Always one shot, never split screen"
           >
             <Square size={13} /> One shot
@@ -302,14 +311,58 @@ export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
           </ChoiceButton>
           <ChoiceButton
             selected={layout === "fit"}
-            onClick={() => layout !== "fit" && update({ fit: "blur", split: undefined, singleShot: false, mode: "auto", x: 0, y: 0, zoom: 1, slowZoom: undefined })}
+            onClick={() => layout !== "fit" && update({ fit: "blur", split: undefined, screen: undefined, singleShot: false, mode: "auto", x: 0, y: 0, zoom: 1, slowZoom: undefined })}
             title="Show the whole frame over a blurred copy, nothing cropped (good for wide shots)"
           >
             <Maximize size={13} /> Whole frame
           </ChoiceButton>
+          <ChoiceButton
+            selected={layout === "screen"}
+            onClick={() =>
+              layout !== "screen" &&
+              update({ split: defaultScreenPanels(), screen: true, splitFollow: false, splitSwap: false, fit: undefined, singleShot: false })
+            }
+            title="Screen recording or slides shown whole, with the presenter's face in its own panel"
+          >
+            <Monitor size={13} /> Screen + face
+          </ChoiceButton>
         </HStack>
 
-        {split ? (
+        {layout === "screen" ? (
+          <>
+            <Text fontSize="xs" color={theme.text.muted}>
+              The screen is shown uncropped so text stays readable; the AI keeps the biggest face framed in the other
+              panel.
+            </Text>
+            <SliderRow
+              label="Screen zoom"
+              value={current.split![0]!.zoom}
+              min={1}
+              max={4}
+              step={0.05}
+              display={`${Math.round(current.split![0]!.zoom * 100)}%`}
+              onChange={(zoom) => updatePanel(0, { zoom })}
+            />
+            {current.split![0]!.zoom > 1.01 ? (
+              <>
+                <SliderRow label="Screen left / right" value={current.split![0]!.x} min={0} max={1} step={0.005} display={`${Math.round(current.split![0]!.x * 100)}%`} onChange={(x) => updatePanel(0, { x })} />
+                <SliderRow label="Screen up / down" value={current.split![0]!.y} min={0} max={1} step={0.005} display={`${Math.round(current.split![0]!.y * 100)}%`} onChange={(y) => updatePanel(0, { y })} />
+              </>
+            ) : null}
+            <SliderRow
+              label="Face zoom"
+              value={current.split![1]!.zoom}
+              min={1}
+              max={6}
+              step={0.05}
+              display={`${Math.round(current.split![1]!.zoom * 100)}%`}
+              onChange={(zoom) => updatePanel(1, { zoom })}
+            />
+            <OutlinedActionButton {...smallButton} startIcon={<ArrowUpDown size={13} />} onClick={() => update({ splitSwap: !current.splitSwap })}>
+              {current.splitSwap ? "Put the screen first" : "Put the face first"}
+            </OutlinedActionButton>
+          </>
+        ) : split ? (
           <>
             <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
               Panels

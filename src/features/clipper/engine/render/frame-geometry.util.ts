@@ -19,12 +19,13 @@ import {
   fitWholeFrame,
   forcedSplitLayout,
   isForcedSplit,
+  screenFaceLayout,
   slowZoomCrop,
   type ClipFramingRender,
 } from "./framing-override.util";
 import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
 import type { FaceSampleCache } from "../reframe/cache.util";
-import { splitFaceTracksFor, trackedPositionAt } from "./split-tracking.util";
+import { largestFaceTrackFor, splitFaceTracksFor, trackedPositionAt } from "./split-tracking.util";
 import { firstPanelShare, speakerEmphasisAt } from "./speaker-emphasis.util";
 import type { ClipperClipSegmentWindow } from "../segmentation/segmentation.types";
 
@@ -100,6 +101,14 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
   const override = render.framing?.track.keyframes.length ? evaluateClipFraming(render.framing, localT) : undefined;
   if (override?.fit === "blur" && !isForcedSplit(override) && formatDef.mode === "crop") {
     return { mode: "contain", panels: [fitWholeFrame(source, output, override.zoom)], blurBackground: true };
+  }
+  if (isForcedSplit(override) && override!.screen && formatDef.mode === "crop") {
+    const face = render.faceCache ? trackedPositionAt(largestFaceTrackFor(render.faceCache), t) : null;
+    return {
+      mode: "split",
+      panels: screenFaceLayout(override!.split!, source, output, face, Boolean(override!.splitSwap)),
+      blurBackground: true,
+    };
   }
   if (isForcedSplit(override) && formatDef.mode === "crop") {
     let faces: Array<{ x: number; y: number } | null> | undefined;
