@@ -18,7 +18,9 @@ const PATCH_H = 14;
 /** Use a face sample this close to the frame; otherwise the person is unknown here. */
 const MAX_FACE_SAMPLE_GAP_SEC = 0.6;
 
-function nearestPair(samples: readonly FaceBoxSample[], time: number) {
+type PickFaces = (faces: FaceBox[]) => { left: FaceBox; right: FaceBox } | null;
+
+function nearestPair(samples: readonly FaceBoxSample[], time: number, pick: PickFaces = selectDominantFacePair) {
   let lo = 0;
   let hi = samples.length - 1;
   while (lo < hi) {
@@ -29,7 +31,7 @@ function nearestPair(samples: readonly FaceBoxSample[], time: number) {
   for (const index of [lo, lo - 1]) {
     const sample = samples[index];
     if (!sample || Math.abs(sample.time - time) > MAX_FACE_SAMPLE_GAP_SEC || sample.faces.length < 2) continue;
-    const pair = selectDominantFacePair(sample.faces);
+    const pair = pick(sample.faces);
     if (pair) return { pair, frameW: sample.frameW, frameH: sample.frameH };
   }
   return null;
@@ -60,7 +62,7 @@ export async function measureMouthActivity(
   faceSamples: readonly FaceBoxSample[],
   clipSegments: ClipperClipSegmentWindow[],
   duration: number,
-  options: { signal?: AbortSignal; onProgress?: (ratio: number) => void } = {},
+  options: { signal?: AbortSignal; onProgress?: (ratio: number) => void; pickFaces?: PickFaces } = {},
 ): Promise<MouthActivitySample[]> {
   const input = await createMediabunnyInput(file);
   try {
@@ -84,7 +86,7 @@ export async function measureMouthActivity(
       }
       if (!sample) continue;
       try {
-        const faces = nearestPair(faceSamples, localTimeToSourceTime(clipSegments, localT));
+        const faces = nearestPair(faceSamples, localTimeToSourceTime(clipSegments, localT), options.pickFaces);
         if (!faces) {
           previous = null;
           continue;
@@ -110,6 +112,27 @@ export async function measureMouthActivity(
   } finally {
     input.dispose();
   }
+}
+
+/**
+ * Mouth movement of the biggest face (the on-screen person) every 0.1 s, clip-local. Words said
+ * while it stays still are probably from someone off camera (the interviewer).
+ */
+export async function measureMainMouthActivity(
+  file: File,
+  faceSamples: readonly FaceBoxSample[],
+  clipSegments: ClipperClipSegmentWindow[],
+  duration: number,
+  options: { signal?: AbortSignal } = {},
+): Promise<Array<{ t: number; activity: number }>> {
+  // The two-person measurement with the biggest face in both slots.
+  const biggest: PickFaces = (faces) => {
+    if (!faces.length) return null;
+    const face = faces.reduce((a, b) => (a.width * a.height >= b.width * b.height ? a : b));
+    return { left: face, right: face };
+  };
+  const activity = await measureMouthActivity(file, faceSamples, clipSegments, duration, { ...options, pickFaces: biggest });
+  return activity.map((sample) => ({ t: sample.t, activity: (sample.left + sample.right) / 2 }));
 }
 
 export async function detectSpeakers(

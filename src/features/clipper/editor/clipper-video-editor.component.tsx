@@ -76,7 +76,7 @@ import { ClipperAiEditorPanel, type AiEditorTurn } from "./ai-editor/clipper-ai-
 import { requestEdit, type AiProvider } from "./ai-editor/ai-editor-providers.util";
 import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
 import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
-import { detectSpeakers } from "./speaker-detect.util";
+import { detectSpeakers, measureMainMouthActivity } from "./speaker-detect.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "./caption-keywords.util";
 import { checkClipFraming } from "./framing-check.util";
@@ -1320,6 +1320,11 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                   videoRef.current?.pause();
                   seek(time);
                 }}
+                onMeasureMouth={
+                  source && autoEditFaceCache
+                    ? () => measureMainMouthActivity(source.rangeFile, autoEditFaceCache.sortedSamples(), source.clip.segments, duration)
+                    : undefined
+                }
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />
