@@ -5,12 +5,14 @@ import { useClipperUi } from "../../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../../shared/theme.util";
 import { fieldStyle, Section } from "../clipper-editor-side-panel.component";
 import {
-  availableAiEditorProviders,
-  listAiEditorModels,
-  pickDefaultModel,
-  PROVIDER_LABEL,
-  type AiEditorProvider,
-} from "./ai-editor-client.util";
+  AI_PROVIDER_LABEL,
+  aiProviderStatuses,
+  defaultModel,
+  listModels,
+  type AiProvider,
+  type AiProviderStatus,
+} from "./ai-editor-providers.util";
+import { removeAnthropicKey, saveAnthropicKey, verifyAnthropicKey } from "./ai-editor-anthropic.util";
 
 export interface AiEditorTurn {
   instruction: string;
@@ -21,7 +23,7 @@ export interface AiEditorTurn {
 }
 
 interface ClipperAiEditorPanelProps {
-  onRun: (instruction: string, provider: AiEditorProvider, model: string) => Promise<AiEditorTurn>;
+  onRun: (instruction: string, provider: AiProvider, model: string) => Promise<AiEditorTurn>;
   hasTranscript: boolean;
   disabled: boolean;
 }
@@ -36,7 +38,7 @@ const SUGGESTIONS = [
 
 const MODEL_STORAGE_KEY = "openclipper.aiEditor.model.";
 
-function loadSavedModel(provider: AiEditorProvider): string | null {
+function loadSavedModel(provider: AiProvider): string | null {
   try {
     return localStorage.getItem(MODEL_STORAGE_KEY + provider);
   } catch {
@@ -44,7 +46,7 @@ function loadSavedModel(provider: AiEditorProvider): string | null {
   }
 }
 
-function saveModel(provider: AiEditorProvider, model: string): void {
+function saveModel(provider: AiProvider, model: string): void {
   try {
     localStorage.setItem(MODEL_STORAGE_KEY + provider, model);
   } catch {
@@ -54,8 +56,12 @@ function saveModel(provider: AiEditorProvider, model: string): void {
 
 export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRun, hasTranscript, disabled }) => {
   const { theme } = useClipperUi();
-  const [providers, setProviders] = useState<AiEditorProvider[] | null>(null);
-  const [provider, setProvider] = useState<AiEditorProvider | null>(null);
+  const [providers, setProviders] = useState<AiProviderStatus[] | null>(null);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [modelsVersion, setModelsVersion] = useState(0);
+  const [provider, setProvider] = useState<AiProvider | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string>("");
   const [modelError, setModelError] = useState<string | null>(null);
@@ -65,33 +71,60 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
 
   useEffect(() => {
     let cancelled = false;
-    void availableAiEditorProviders().then((list) => {
+    void aiProviderStatuses().then((list) => {
       if (cancelled) return;
       setProviders(list);
-      setProvider(list[0] ?? null);
+      // Prefer a provider that's ready; Claude is listed first so its key can be added here.
+      setProvider((list.find((item) => item.hasKey) ?? list[0])?.provider ?? null);
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const providerReady = Boolean(providers?.find((item) => item.provider === provider)?.hasKey);
+
+  const saveKey = async () => {
+    setKeyBusy(true);
+    setKeyError(null);
+    try {
+      await verifyAnthropicKey(keyDraft);
+      await saveAnthropicKey(keyDraft);
+      setKeyDraft("");
+      setProviders((list) => list?.map((item) => (item.provider === "anthropic" ? { ...item, hasKey: true } : item)) ?? list);
+      setModelsVersion((value) => value + 1);
+    } catch (error) {
+      setKeyError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const forgetKey = async () => {
+    await removeAnthropicKey();
+    setModels([]);
+    setModel("");
+    setProviders((list) => list?.map((item) => (item.provider === "anthropic" ? { ...item, hasKey: false } : item)) ?? list);
+  };
+
   useEffect(() => {
-    if (!provider) return;
+    if (!provider || !providerReady) return;
     const controller = new AbortController();
     setModelError(null);
     setModels([]);
-    listAiEditorModels(provider, controller.signal)
+    listModels(provider, controller.signal)
       .then((ids) => {
+        if (controller.signal.aborted) return;
         setModels(ids);
         const saved = loadSavedModel(provider);
-        setModel(saved && ids.includes(saved) ? saved : pickDefaultModel(provider, ids) ?? "");
+        setModel(saved && ids.includes(saved) ? saved : defaultModel(provider, ids) ?? "");
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setModelError(error instanceof Error ? error.message : String(error));
       });
     return () => controller.abort();
-  }, [provider]);
+  }, [provider, providerReady, modelsVersion]);
 
   const run = async (text: string) => {
     if (!provider || !model || !text.trim() || running) return;
@@ -114,19 +147,6 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
     );
   }
 
-  if (providers.length === 0) {
-    return (
-      <Section title="AI editor">
-        <Text fontSize="sm">The AI editor uses your OpenRouter or Groq API key.</Text>
-        <Text fontSize="xs" color={theme.text.muted}>
-          Add one in Settings → Transcription (the same keys used for cloud transcription), then reopen the editor.
-          OpenRouter gives access to Claude and many other models; you pay the provider per request (usually a fraction
-          of a cent per edit).
-        </Text>
-      </Section>
-    );
-  }
-
   const selectStyle: React.CSSProperties = { ...fieldStyle, padding: "4px 6px" };
 
   return (
@@ -144,14 +164,14 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
         <HStack gap={2}>
           <select
             value={provider ?? ""}
-            onChange={(event) => setProvider(event.target.value as AiEditorProvider)}
-            style={{ ...selectStyle, width: 120 }}
+            onChange={(event) => setProvider(event.target.value as AiProvider)}
+            style={{ ...selectStyle, width: 150 }}
             aria-label="AI provider"
             disabled={running}
           >
             {providers.map((item) => (
-              <option key={item} value={item}>
-                {PROVIDER_LABEL[item]}
+              <option key={item.provider} value={item.provider}>
+                {AI_PROVIDER_LABEL[item.provider]}
               </option>
             ))}
           </select>
@@ -164,6 +184,7 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
             style={selectStyle}
             aria-label="AI model"
             disabled={running || models.length === 0}
+            hidden={!providerReady}
           >
             {models.length === 0 ? <option value="">{modelError ? "Couldn't load models" : "Loading models…"}</option> : null}
             {models.map((id) => (
@@ -173,6 +194,44 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
             ))}
           </select>
         </HStack>
+        {provider === "anthropic" && !providerReady ? (
+          <VStack align="stretch" gap={2} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+            <Text fontSize="xs">
+              Paste an Anthropic API key to use Claude directly. Create one at console.anthropic.com → API Keys. It's
+              stored only on this computer, and you pay Anthropic per request (a few cents at most for a short clip
+              with the default Claude Opus 5.5).
+            </Text>
+            <HStack gap={2}>
+              <input
+                type="password"
+                value={keyDraft}
+                onChange={(event) => setKeyDraft(event.target.value)}
+                placeholder="sk-ant-…"
+                style={fieldStyle}
+                aria-label="Anthropic API key"
+                autoComplete="off"
+              />
+              <Button size="sm" onClick={() => void saveKey()} disabled={!keyDraft.trim() || keyBusy}>
+                {keyBusy ? <Spinner size="xs" /> : "Save"}
+              </Button>
+            </HStack>
+            {keyError ? (
+              <Text fontSize="xs" color={theme.status.danger}>
+                {keyError}
+              </Text>
+            ) : null}
+            <Text fontSize="xs" color={theme.text.muted}>
+              {providers.length > 1
+                ? `Or switch to ${providers.filter((item) => item.provider !== "anthropic").map((item) => AI_PROVIDER_LABEL[item.provider]).join(" or ")} above.`
+                : "You can also use an OpenRouter or Groq key from Settings → Transcription."}
+            </Text>
+          </VStack>
+        ) : null}
+        {provider === "anthropic" && providerReady ? (
+          <Box as="button" alignSelf="flex-start" fontSize="xs" color={theme.text.muted} cursor="pointer" _hover={{ color: theme.status.danger }} onClick={() => void forgetKey()}>
+            Remove Anthropic key
+          </Box>
+        ) : null}
         {modelError ? (
           <Text fontSize="xs" color={theme.status.danger}>
             {modelError}
@@ -187,7 +246,7 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
           placeholder="e.g. Cut the part about the weather and add “Wait for it…” at the start"
           rows={3}
           style={{ ...fieldStyle, resize: "vertical", fontFamily: "inherit" }}
-          disabled={running || disabled}
+          disabled={running || disabled || !providerReady}
           aria-label="Instruction for the AI editor"
         />
         <Button
@@ -196,7 +255,7 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
           color="white"
           _hover={{ bg: clipperTheme.accentHover }}
           onClick={() => void run(instruction)}
-          disabled={!instruction.trim() || !model || running || disabled}
+          disabled={!instruction.trim() || !model || !providerReady || running || disabled}
         >
           {running ? (
             <HStack gap={2}>

@@ -71,7 +71,7 @@ import {
 } from "./auto-edit.util";
 import { ClipperAutoEditPanel } from "./clipper-auto-edit-panel.component";
 import { ClipperAiEditorPanel, type AiEditorTurn } from "./ai-editor/clipper-ai-editor-panel.component";
-import { requestAiEdit, type AiEditorProvider } from "./ai-editor/ai-editor-client.util";
+import { requestEdit, type AiProvider } from "./ai-editor/ai-editor-providers.util";
 import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
 import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
 
@@ -602,7 +602,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   ]);
 
   const runAiEdit = useCallback(
-    async (instruction: string, provider: AiEditorProvider, model: string): Promise<AiEditorTurn> => {
+    async (instruction: string, provider: AiProvider, model: string): Promise<AiEditorTurn> => {
       const current = editRef.current;
       if (!current) return { instruction, summary: "", applied: [], skipped: [], error: "The editor isn't ready yet." };
       videoRef.current?.pause();
@@ -617,7 +617,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           canChangeSource: Boolean(source),
           title: (openedResult ?? result)?.socialTitle,
         });
-        const plan = parseAiEditReply(await requestAiEdit(provider, model, messages));
+        const plan = parseAiEditReply(await requestEdit(provider, model, messages));
         // Apply to the latest state, in case the user edited while the AI was thinking.
         const latest = editRef.current ?? current;
         const outcome = applyAiEditPlan(latest, plan, {

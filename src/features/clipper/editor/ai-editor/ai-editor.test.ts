@@ -134,3 +134,12 @@ describe("prompt and models", () => {
     expect(pickDefaultModel("groq", ["whisper-large-v3"])).toBeNull();
   });
 });
+
+describe("Claude provider", () => {
+  it("defaults to Claude Opus 5.5 when the account has it", async () => {
+    const { pickDefaultClaudeModel } = await import("./ai-editor-anthropic.util");
+    expect(pickDefaultClaudeModel(["claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5"])).toBe("claude-opus-5-5");
+    expect(pickDefaultClaudeModel(["claude-sonnet-5-5", "claude-opus-5"])).toBe("claude-opus-5");
+    expect(pickDefaultClaudeModel([])).toBeNull();
+  });
+});
