@@ -39,6 +39,11 @@ export interface ClipEditSegment {
   zoom?: number;
   /** Point the punch-in zooms towards (0..1 of the frame), usually the speaker's face. */
   zoomCenter?: { x: number; y: number };
+  /**
+   * Seconds this part's sound starts before its picture (J-cut, positive) or after it (L-cut,
+   * negative). The previous part's sound ends to match.
+   */
+  audioOffset?: number;
 }
 
 export type ClipTextPosition = "top" | "middle" | "bottom";
@@ -329,6 +334,7 @@ export function framingTracksEqual(a: ClipFramingTrack | null, b: ClipFramingTra
 export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number): boolean {
   const [only] = edit.segments;
   return !(
+    !edit.segments.some((segment) => segment.audioOffset) &&
     edit.segments.length === 1 &&
     (only.zoom ?? 1) === 1 &&
     only.start <= 0.001 &&

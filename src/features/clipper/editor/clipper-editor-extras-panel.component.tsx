@@ -270,6 +270,22 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
               h="26px"
               px={2}
               fontSize="xs"
+              title="Where a part starts in a song, its music starts half a second before the picture"
+              onClick={() =>
+                onChange((current) => ({
+                  ...current,
+                  segments: current.segments.map((segment, index) =>
+                    index > 0 && songs.some((song) => segment.start >= song.start - 0.5 && segment.start < song.end) ? { ...segment, audioOffset: 0.5 } : segment,
+                  ),
+                }))
+              }
+            >
+              J-cut into songs
+            </OutlinedActionButton>
+            <OutlinedActionButton
+              h="26px"
+              px={2}
+              fontSize="xs"
               disabled={!captionGroups.length}
               onClick={() =>
                 onChange((current) => ({

@@ -1304,6 +1304,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onMeasureColor={source ? () => measureClipColor(source) : undefined}
                 punchInCenter={source ? (start, end) => faceCenterInOutput(source, start, end) : undefined}
                 onFindMusic={result ? async () => detectMusicSections(await resolveSourceFile(result, projectId), autoEditWords) : undefined}
+                projectId={projectId}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />

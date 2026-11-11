@@ -16,7 +16,7 @@ import { createMediabunnyInput } from "../lib/media/mediabunny-file-source.util"
 import { EncodeBackpressure } from "../lib/media/encode-backpressure.util";
 import { assertExportAudioSupported, exportAudioConfig } from "../lib/media/video-frame-effect-audio.util";
 import { drawClipEditOverlays, drawCoverTitle, punchInRect } from "./clip-edit-draw.util";
-import { COVER_FIRST_FRAMES_SEC, getFadeFactor, getOutputDuration, soundEffectsActive, type ClipEdit } from "./clip-edit.util";
+import { COVER_FIRST_FRAMES_SEC, getFadeFactor, getOutputDuration, soundEffectsActive, type ClipEdit, type ClipEditSegment } from "./clip-edit.util";
 import { createAudioExtrasMixer, decodeAudioFile, soundEffectEvents, type DecodedAudio } from "./audio-extras.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { hookDuration, renderSegmentsFor } from "./hook.util";
@@ -74,6 +74,23 @@ function drawFrame(
   } else {
     sample.draw(ctx, 0, 0, width, height);
   }
+}
+
+/** Audio source ranges for the parts, shifted by each part's J/L-cut offset. */
+export function audioRangesFor(segments: readonly ClipEditSegment[]): Array<{ start: number; end: number }> {
+  return segments.map((segment, index) => {
+    const lead = index > 0 ? clampLead(segment, segments[index - 1]!) : 0;
+    const next = segments[index + 1];
+    const nextLead = next ? clampLead(next, segment) : 0;
+    return { start: Math.max(0, segment.start - lead), end: Math.max(segment.start - lead + 0.01, segment.end - nextLead) };
+  });
+}
+
+/** A J/L offset can't be longer than either part, minus a little. */
+function clampLead(segment: ClipEditSegment, previous: ClipEditSegment): number {
+  const lead = segment.audioOffset ?? 0;
+  const limit = Math.max(0, Math.min(segment.end - segment.start, previous.end - previous.start) - 0.2);
+  return Math.max(-limit, Math.min(limit, lead, segment.start));
 }
 
 /**
@@ -248,7 +265,11 @@ export async function renderClipEdit(
       let cleanup: VoiceCleanup | null = null;
 
       let offset = 0;
-      for (const segment of segments) {
+      // J/L cuts: each part's sound can start before (J) or after (L) its picture; the previous
+      // part's sound ends correspondingly, so the audio stays continuous.
+      const audioRanges = audioRangesFor(segments);
+      for (const range of audioRanges) {
+        const segment = range;
         for await (const wrapped of sink.buffers(segment.start, segment.end)) {
           throwIfAborted(signal);
           const { buffer, timestamp } = wrapped;

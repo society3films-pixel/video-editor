@@ -7,6 +7,7 @@ import { clipperTheme } from "../shared/theme.util";
 import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.component";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import { ClipperEditTemplates } from "./clipper-edit-templates.component";
+import { ClipperBrollLibrary } from "./clipper-broll-library.component";
 import type { ColorCorrection } from "../engine/render/color-grade.util";
 import type { MusicSection } from "./music-detect.util";
 import {
@@ -38,6 +39,7 @@ interface ClipperEditorSidePanelProps {
   onMeasureColor?: () => Promise<ColorCorrection | null>;
   punchInCenter?: (start: number, end: number) => { x: number; y: number } | null;
   onFindMusic?: () => Promise<MusicSection[]>;
+  projectId?: string;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -279,6 +281,7 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   onMeasureColor,
   punchInCenter,
   onFindMusic,
+  projectId,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -319,6 +322,36 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
               }))
             }
           />
+          {activePartIndex > 0 ? (
+            <>
+              <SliderRow
+                label="Sound before / after the cut (J / L)"
+                value={activePart.audioOffset ?? 0}
+                min={-1.5}
+                max={1.5}
+                step={0.05}
+                display={
+                  !activePart.audioOffset
+                    ? "Straight cut"
+                    : activePart.audioOffset > 0
+                      ? `J: ${activePart.audioOffset.toFixed(2)}s early`
+                      : `L: ${(-activePart.audioOffset).toFixed(2)}s late`
+                }
+                onChange={(audioOffset) =>
+                  onChange((current) => ({
+                    ...current,
+                    segments: current.segments.map((segment) =>
+                      segment.id === activePart.id ? { ...segment, audioOffset: Math.abs(audioOffset) < 0.02 ? undefined : audioOffset } : segment,
+                    ),
+                  }))
+                }
+              />
+              <Text fontSize="xs" color={theme.text.muted}>
+                J: this part's sound starts before its picture (good for cutting into a song). L: the last part's sound
+                carries on over this picture. Applied when you save.
+              </Text>
+            </>
+          ) : null}
         </Section>
       ) : null}
 
@@ -369,6 +402,8 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
           onMeasureColor={onMeasureColor}
         />
       ) : null}
+
+      {projectId && words ? <ClipperBrollLibrary projectId={projectId} edit={edit} words={words} onChange={onChange} /> : null}
 
       <ClipperEditorExtrasPanel
         edit={edit}

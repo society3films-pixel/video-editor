@@ -2,6 +2,7 @@
  * Direct Claude access for the AI editor, through the official Anthropic SDK and the user's own
  * Anthropic API key (stored in the app's local database, like the transcription keys).
  */
+import type { AiImage } from "./ai-image.util";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   localRecordDelete,
@@ -96,6 +97,7 @@ export async function requestClaudeEdit(
   model: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
+  image?: AiImage,
 ): Promise<string> {
   const client = await requireClient();
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
@@ -109,7 +111,17 @@ export async function requestClaudeEdit(
         model,
         max_tokens: 16000,
         system,
-        messages: [{ role: "user", content: user }],
+        messages: [
+          {
+            role: "user",
+            content: image
+              ? [
+                  { type: "image" as const, source: { type: "base64" as const, media_type: image.mediaType, data: image.base64 } },
+                  { type: "text" as const, text: user },
+                ]
+              : user,
+          },
+        ],
         ...(EFFORT_MODELS.test(model) ? { output_config: { effort: "medium" as const } } : {}),
         // If a safety classifier declines, the API retries on a suitable model in the same call.
         ...(useFallbacks ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),

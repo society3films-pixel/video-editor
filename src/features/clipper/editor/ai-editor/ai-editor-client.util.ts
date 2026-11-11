@@ -2,6 +2,7 @@
  * Talks to an OpenAI-compatible chat endpoint using the Groq or OpenRouter key the user already
  * saved for cloud transcription.
  */
+import { withImage, type AiImage } from "./ai-image.util";
 import {
   transcriptionApiKeysService,
   type CloudTranscriptionProvider,
@@ -81,6 +82,7 @@ export async function requestAiEdit(
   model: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
+  image?: AiImage,
 ): Promise<string> {
   const key = await requireKey(provider);
   const response = await fetch(CHAT_URL[provider], {
@@ -91,7 +93,7 @@ export async function requestAiEdit(
       "Content-Type": "application/json",
       ...(provider === "openrouter" ? { "X-Title": "Open Clipper" } : {}),
     },
-    body: JSON.stringify({ model, messages, temperature: 0.2, max_tokens: 2000 }),
+    body: JSON.stringify({ model, messages: withImage(messages, image), temperature: 0.2, max_tokens: 2000 }),
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

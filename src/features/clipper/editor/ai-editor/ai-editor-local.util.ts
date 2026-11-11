@@ -6,6 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../../../../shared/utils/platform.util";
+import { withImage, type AiImage } from "./ai-image.util";
 
 const URL_STORAGE_KEY = "openclipper.ai.localUrl";
 
@@ -81,9 +82,10 @@ export async function requestLocalEdit(
   model: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
+  image?: AiImage,
 ): Promise<string> {
   const reply = JSON.parse(
-    await call("/chat/completions", { model, messages, temperature: 0.2, max_tokens: 4000, stream: false }, signal),
+    await call("/chat/completions", { model, messages: withImage(messages, image), temperature: 0.2, max_tokens: 4000, stream: false }, signal),
   ) as { choices?: Array<{ message?: { content?: string } }> };
   const content = reply.choices?.[0]?.message?.content;
   if (!content) throw new Error("The local model returned an empty reply.");

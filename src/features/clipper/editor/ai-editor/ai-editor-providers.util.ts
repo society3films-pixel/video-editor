@@ -13,6 +13,7 @@ import {
   pickDefaultClaudeModel,
   requestClaudeEdit,
 } from "./ai-editor-anthropic.util";
+import type { AiImage } from "./ai-image.util";
 import { listLocalModels, localAiAvailable, pickDefaultLocalModel, requestLocalEdit } from "./ai-editor-local.util";
 
 export type AiProvider = "anthropic" | "local" | OpenAiCompatibleProvider;
@@ -60,7 +61,9 @@ export function requestEdit(
   model: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
+  /** One picture for vision models (B-roll tagging). */
+  image?: AiImage,
 ): Promise<string> {
-  if (provider === "local") return requestLocalEdit(model, messages, signal);
-  return provider === "anthropic" ? requestClaudeEdit(model, messages, signal) : requestAiEdit(provider, model, messages, signal);
+  if (provider === "local") return requestLocalEdit(model, messages, signal, image);
+  return provider === "anthropic" ? requestClaudeEdit(model, messages, signal, image) : requestAiEdit(provider, model, messages, signal, image);
 }

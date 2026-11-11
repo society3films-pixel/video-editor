@@ -45,6 +45,7 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
       start: Math.max(0, s.start),
       end: Math.min(duration, s.end),
       ...(isFiniteNumber(s.zoom) && s.zoom > 1 ? { zoom: Math.min(2, s.zoom) } : {}),
+      ...(isFiniteNumber(s.audioOffset) && s.audioOffset !== 0 ? { audioOffset: Math.max(-2, Math.min(2, s.audioOffset)) } : {}),
       ...(s.zoomCenter && isFiniteNumber(s.zoomCenter.x) && isFiniteNumber(s.zoomCenter.y)
         ? { zoomCenter: { x: Math.min(1, Math.max(0, s.zoomCenter.x)), y: Math.min(1, Math.max(0, s.zoomCenter.y)) } }
         : {}),
