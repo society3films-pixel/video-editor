@@ -80,6 +80,14 @@ The **Captions** tab lets you fix caption wording line by line, remove lines, or
 
 **AI across the project.** With an AI set up (an Anthropic key in any editor's AI tab), Preview's **Pick clips with AI** reads the transcript and saves the best moments as AI clips (choose how many, the length range and an optional focus). In Exports, **Write titles & hashtags** writes a hook title, descriptions and hashtags for every export, and **Edit all clips** runs Auto edit and/or one AI instruction on the newest version of every clip and saves each as a new export.
 
+**Framing check.** Preview's **Check framing** finds the shots worth a look in every clip (a face cut by the frame edge, nobody in frame, someone left out, a shaky camera), worst first, each with **Fix**. The editor's Framing tab re-checks as you change things. More layouts: **Whole frame** (nothing cropped, a blurred copy fills the rest), **Screen + face** (a screen recording or slides shown uncropped, the presenter's face in its own panel; Auto edit uses it for screen recordings with a small webcam), and a **Slow zoom** push-in for any single shot.
+
+**More editing.** **Hook** plays the clip's strongest line first as a teaser, then the clip from the start. **B-roll** puts an image or video over part of the clip (top part, full screen or picture in picture). Captions can get **emoji**, be **translated** into 19 languages (keeping their timing), have swear words **masked and bleeped**, and use their own **caption style** per clip. **Templates** save a clip's look (caption style, music, effects, progress bar, fades, keywords, emoji, hook) to apply to any clip or to all of them. The preview plays cuts, music, effects and bleeps as the saved video will.
+
+**Premiere Pro.** The editor's **Premiere Pro** button writes an editable project next to your exports: a clean render (framing, no burned-in captions), an XML timeline with every cut and the hook as separate clips and the music on its own track (File → Import in Premiere), and an `.srt` of the captions.
+
+**Local AI.** Every AI feature can run on your own computer: pick **Local model (Ollama / LM Studio)** in the AI tab (for example `ollama pull qwen3:14b`). Nothing leaves your machine and there's no per-request cost; bigger models follow edit instructions better.
+
 Captions and framing are burned into exported files, so these changes re-render the clip from the project's source video; they are available while the project's video is loaded and the clip's start and end match the export.
 
 Shortcuts: `Space` play/pause, `S` split at playhead, `Delete` remove selected part, `Ctrl+Z` undo, `←`/`→` step a frame (`Shift` for 1 second).
