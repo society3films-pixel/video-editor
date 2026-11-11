@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Box, Center, Text } from "@chakra-ui/react";
 import { checkClipFraming, FRAMING_ISSUE_LABEL } from "../editor/framing-check.util";
 import { getClipperFormatDef } from "../shared/formats.util";
+import { useWatchFolderAutomation } from "../hooks/use-watch-folder-automation.hook";
 import { ClipperLayout } from "../components/clipper-layout.component";
 import { ClipperExportsView } from "../components/clipper-exports-view.component";
 import { ClipperRenderQueue } from "../components/clipper-render-queue.component";
@@ -21,6 +22,7 @@ export type { ClipperSessionViewProps } from "../shared/clipper-session-view.typ
 export function ClipperSessionView({ project, token, loaded }: ClipperSessionViewProps) {
   const { theme, errorPanel } = useClipperUi();
   const session = useClipperSessionView({ project, token, loaded });
+  useWatchFolderAutomation(project.id, session);
   const {
     state,
     settings,

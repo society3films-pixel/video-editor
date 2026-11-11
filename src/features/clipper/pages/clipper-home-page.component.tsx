@@ -25,6 +25,8 @@ import { ClipperPublishView } from "../components/clipper-publish-view.component
 import { ClipperOwnersView } from "../components/clipper-owners-view.component";
 import { CreateClipperProjectModal } from "./create-clipper-project-modal.component";
 import { ClipperTauriGate } from "./clipper-tauri-gate.component";
+import { ClipperWatchFolder } from "../components/home/clipper-watch-folder.component";
+import { isTauri } from "../../../shared/utils/platform.util";
 import { ClipperTranscriptSearch } from "../components/home/clipper-transcript-search.component";
 import { ClipperFirstRunSetup } from "../components/clipper-first-run-setup.component";
 import { openClipperProjectsDir } from "../persistence/project-data-files.util";
@@ -178,6 +180,7 @@ export function ClipperHomePage() {
               </VStack>
             </HStack>
 
+            {isTauri() ? <ClipperWatchFolder /> : null}
             {projects.length > 0 ? <ClipperTranscriptSearch /> : null}
 
             {loading || (projects.length === 0 && !setup.loaded) ? (

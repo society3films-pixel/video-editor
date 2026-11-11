@@ -88,6 +88,14 @@ The **Captions** tab lets you fix caption wording line by line, remove lines, or
 
 **Local AI.** Every AI feature can run on your own computer: pick **Local model (Ollama / LM Studio)** in the AI tab (for example `ollama pull qwen3:14b`). Nothing leaves your machine and there's no per-request cost; bigger models follow edit instructions better.
 
+**Colour, stabilising and voice.** The Edit tab's **Color** applies an automatic correction (exposure, contrast, saturation, colour cast, measured from the clip) and a look (Natural, Warm, Cool, Cinematic, Vibrant, Moody, Black & white, Vintage) under the captions. **Stabilize** removes camera shake from handheld footage, and **Voice** reduces background noise and rumble and evens out the level. With music, **Pulse on the beat** gives the picture a small zoom on the music's beats.
+
+**Smarter framing and captions.** Punch-ins zoom towards the speaker's face. The render queue flags clips with framing warnings and can hold them back, and **Auto-fix all clips** (in Check framing) learns from the layouts you choose. Auto edit's **Tighten conversation** cuts pauses at a change of speaker extra short. The **caption designer** sets the font, colours, outline, effects and background box; **Chapter cards** adds AI title cards at topic changes; the render queue chooses which formats get burned-in captions and can save an `.srt` with every export.
+
+**Across clips and projects.** **Score clips** (Exports) has the AI rate each clip's hook, pacing and payoff with one tip. **YouTube chapters** (Preview) writes timestamps for the long video. The home page searches what was said in every project and makes a clip from any hit. **Every format** (editor) saves an edit in all enabled formats at once. The project export (**Premiere / Resolve / FCP**) also writes a Final Cut Pro `.fcpxml`.
+
+**Watch folder.** On the home page, choose a folder: each new video dropped in it becomes a project that's transcribed, clipped and (optionally) rendered with no clicks, one at a time, while the app is open on the home page.
+
 Captions and framing are burned into exported files, so these changes re-render the clip from the project's source video; they are available while the project's video is loaded and the clip's start and end match the export.
 
 Shortcuts: `Space` play/pause, `S` split at playhead, `Delete` remove selected part, `Ctrl+Z` undo, `←`/`→` step a frame (`Shift` for 1 second).
