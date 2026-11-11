@@ -46,3 +46,23 @@ describe("Premiere export", () => {
     expect(srt).toBe("1\n00:00:02,500 --> 00:00:03,500\nhello world\n");
   });
 });
+
+import { buildFcpxml } from "./premiere-export.util";
+describe("Final Cut Pro export", () => {
+  it("writes frame-exact asset clips with the music connected below", () => {
+    const xml = buildFcpxml({
+      name: "c",
+      width: 1080,
+      height: 1920,
+      rate: { timebase: 30, ntsc: true },
+      video: { name: "c.mp4", path: "C:/x/c.mp4", durationSec: 20 },
+      parts: [{ start: 10, end: 12 }, { start: 0, end: 5 }],
+      music: { name: "m.mp3", path: "C:/x/m.mp3", durationSec: 60, startSec: 0 },
+    });
+    expect(xml).toContain('frameDuration="1001/30000s"');
+    expect(xml).toContain('src="file:///C:/x/c.mp4"');
+    expect(xml).toMatch(/<asset-clip ref="r2" offset="0\/30000s" start="300300\/30000s" duration="60060\/30000s"/);
+    expect(xml).toMatch(/<asset-clip ref="r3" lane="-1"/);
+    expect(xml).toContain('<sequence format="r1" duration="210210/30000s"');
+  });
+});

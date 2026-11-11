@@ -208,6 +208,9 @@ export const ClipperExportFormatRow: React.FC<ClipperExportFormatRowProps> = ({
           }
           onClose={() => setEditorTarget(null)}
           onSaved={() => onEdited?.()}
+          getSourceForFormat={
+            editorBridge ? (formatId) => editorBridge.getSource({ ...editorTarget.base, formatId }) : undefined
+          }
         />
       ) : null}
     </HStack>

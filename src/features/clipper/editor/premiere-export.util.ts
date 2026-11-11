@@ -130,6 +130,55 @@ export function buildPremiereXml(input: PremiereSequenceInput): string {
   );
 }
 
+/** file:///… URL for FCPXML (Final Cut Pro). */
+function fileUrl(path: string): string {
+  const url = pathUrl(path);
+  return url.startsWith("file://localhost/") ? `file:///${url.slice("file://localhost/".length)}` : url;
+}
+
+/**
+ * Final Cut Pro (FCPXML 1.10) version of the same timeline: the parts as asset clips on the
+ * primary storyline, the music as a connected clip below.
+ */
+export function buildFcpxml(input: PremiereSequenceInput): string {
+  const fps = fpsOf(input.rate);
+  const frames = (sec: number) => Math.round(sec * fps);
+  // Times as frame-exact rationals.
+  const time = (frameCount: number) =>
+    input.rate.ntsc ? `${frameCount * 1001}/${input.rate.timebase * 1000}s` : `${frameCount}/${input.rate.timebase}s`;
+  const frameDuration = input.rate.ntsc ? `1001/${input.rate.timebase * 1000}s` : `1/${input.rate.timebase}s`;
+  let cursor = 0;
+  const clips = input.parts.map((part, index) => {
+    const start = frames(part.start);
+    const length = Math.max(1, frames(part.end) - start);
+    const offset = cursor;
+    cursor += length;
+    return { index, start, length, offset };
+  });
+  const total = cursor;
+  const musicLength = input.music ? Math.min(total, frames(input.music.durationSec) - frames(input.music.startSec)) : 0;
+  const musicClip =
+    input.music && musicLength > 0
+      ? `<asset-clip ref="r3" lane="-1" offset="${time(0)}" start="${time(frames(input.music.startSec))}" duration="${time(musicLength)}" name="${escapeXml(input.music.name)}" audioRole="music"/>`
+      : "";
+  const spine = clips
+    .map(
+      (clip) =>
+        `<asset-clip ref="r2" offset="${time(clip.offset)}" start="${time(clip.start)}" duration="${time(clip.length)}" name="${escapeXml(input.video.name)} ${clip.index + 1}">${clip.index === 0 ? musicClip : ""}</asset-clip>`,
+    )
+    .join("");
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.10"><resources>` +
+    `<format id="r1" frameDuration="${frameDuration}" width="${input.width}" height="${input.height}"/>` +
+    `<asset id="r2" name="${escapeXml(input.video.name)}" start="0s" duration="${time(frames(input.video.durationSec))}" hasVideo="1" hasAudio="1" format="r1" audioSources="1" audioChannels="2">` +
+    `<media-rep kind="original-media" src="${escapeXml(fileUrl(input.video.path))}"/></asset>` +
+    (input.music
+      ? `<asset id="r3" name="${escapeXml(input.music.name)}" start="0s" duration="${time(frames(input.music.durationSec))}" hasAudio="1" audioSources="1" audioChannels="2"><media-rep kind="original-media" src="${escapeXml(fileUrl(input.music.path))}"/></asset>`
+      : "") +
+    `</resources><library><event name="Open Clipper"><project name="${escapeXml(input.name)}"><sequence format="r1" duration="${time(total)}" tcStart="0s" tcFormat="NDF"><spine>${spine}</spine></sequence></project></event></library></fcpxml>\n`
+  );
+}
+
 function srtTime(sec: number): string {
   const ms = Math.max(0, Math.round(sec * 1000));
   const pad = (value: number, size = 2) => String(value).padStart(size, "0");
@@ -281,6 +330,17 @@ async function exportToPremiereUnlocked(
   });
   await writeFile(projectId, `${stem}.xml`, new Blob([xml], { type: "application/xml" }));
   files.push(`${stem}.xml`);
+  const fcpxml = buildFcpxml({
+    name: stem,
+    width: video.width,
+    height: video.height,
+    rate: frameRateFor(video.fps),
+    video: { name: `${stem}.mp4`, path: videoPath, durationSec: video.durationSec },
+    parts: renderSegmentsFor(edit),
+    music,
+  });
+  await writeFile(projectId, `${stem}.fcpxml`, new Blob([fcpxml], { type: "application/xml" }));
+  files.push(`${stem}.fcpxml`);
   const srt = buildSrt(captionGroups, edit);
   if (srt.trim()) {
     await writeFile(projectId, `${stem}.srt`, new Blob([srt], { type: "text/plain" }));

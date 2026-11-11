@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Box, Button, Flex, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
-import { Clapperboard, Film, Pause, Play, RotateCcw, Scissors, Sparkles, Trash2, Undo2, X } from "lucide-react";
+import { Clapperboard, Film, Layers, Pause, Play, RotateCcw, Scissors, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { appToast } from "../../../shared/utils/toast.service";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import type { ClipperFormatResult } from "../shared/state.util";
+import { getClipperFormatDef } from "../shared/formats.util";
 import type { ClipperFormatDef } from "../shared/formats.util";
 import { splitFaceTracksFor, trackedPositionAt } from "../engine/render/split-tracking.util";
 import {
@@ -102,6 +103,8 @@ interface ClipperVideoEditorProps {
   /** Clip mode: formats the framing can be previewed in. */
   formatOptions?: ClipperFormatDef[];
   onFormatChange?: (formatId: string) => void;
+  /** Source for this clip in another format (Save in every format). */
+  getSourceForFormat?: (formatId: string) => ClipEditorSource | null;
   /** Saves the clip's framing to the project (applies to Preview and every format). */
   onSaveFraming?: (track: ClipFramingTrack) => Promise<void>;
   projectId: string;
@@ -141,6 +144,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   formatOptions = [],
   onFormatChange,
   onSaveFraming,
+  getSourceForFormat,
   projectId,
   source = null,
   onClose,
@@ -780,7 +784,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       appToast.success(
         "Premiere Pro project exported",
         `${outcome.files.join(", ")}${outcome.folderHint && outcome.folderHint !== outcome.files[0] ? ` in ${outcome.folderHint}` : ""}. ` +
-          "In Premiere: File → Import the .xml, then import the .srt and drag it onto the timeline for captions." +
+          "Premiere: File → Import the .xml. DaVinci Resolve: File → Import Timeline → the .xml. Final Cut Pro: File → Import → XML, the .fcpxml. Import the .srt for editable captions." +
           (outcome.usedCleanRender ? "" : " The project's source video wasn't loaded, so the video still has its burned-in captions."),
       );
     } catch (error) {
@@ -794,6 +798,64 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       setSaving(false);
     }
   }, [framingChanged, onSaveFraming, projectId, result, saving, source]);
+
+  /** Saves this edit as a new export in every enabled format (each framed for its shape). */
+  const saveAllFormats = useCallback(async () => {
+    const current = editRef.current;
+    if (!current || saving || !result || !source || !getSourceForFormat) return;
+    videoRef.current?.pause();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setSaving(true);
+    setSaveProgress(0);
+    const formatIds = [...new Set([result.formatId, ...source.frameContext.settings.formats.enabledFormatIds])];
+    const saved: string[] = [];
+    const warnings: string[] = [];
+    const failed: string[] = [];
+    try {
+      if (current.framing && framingChanged && onSaveFraming) await onSaveFraming(current.framing);
+      for (const [index, formatId] of formatIds.entries()) {
+        if (controller.signal.aborted) break;
+        const formatSource = formatId === result.formatId ? source : getSourceForFormat(formatId);
+        const def = getClipperFormatDef(formatId);
+        if (!formatSource || !def) {
+          failed.push(`${def?.label ?? formatId} (source not loaded)`);
+          continue;
+        }
+        const issues = checkClipFraming({ ...formatSource, framingTrack: current.framing ?? formatSource.framingTrack, frameContext: applyEditToFrameContext(formatSource.frameContext, current) });
+        if (issues.some((issue) => issue.severity === "warning")) warnings.push(def.label);
+        // A format without an export yet is rendered straight from the source.
+        const base: ClipperFormatResult =
+          formatId === result.formatId ? result : { ...result, id: `format-${formatId}`, formatId, label: def.label, platform: def.platform, renderSignature: undefined, file: undefined, blob: undefined };
+        try {
+          await saveEditedClipperExport(projectId, base, current, duration, {
+            signal: controller.signal,
+            onProgress: (ratio) => setSaveProgress((index + ratio) / formatIds.length),
+            source: formatSource,
+            needsSourceRender: true,
+            metadataFrom: openedResult,
+          });
+          saved.push(def.label);
+        } catch (error) {
+          if (controller.signal.aborted) break;
+          failed.push(`${def.label} (${error instanceof Error ? error.message : String(error)})`);
+        }
+      }
+      if (saved.length) {
+        appToast.success(
+          `Saved in ${saved.length} format${saved.length === 1 ? "" : "s"}`,
+          `${saved.join(", ")}.${warnings.length ? ` Check the framing in: ${warnings.join(", ")}.` : ""}${failed.length ? ` Not saved: ${failed.join("; ")}.` : ""}`,
+        );
+        onSaved();
+        onClose();
+      } else if (!controller.signal.aborted) {
+        appToast.error("Nothing was saved", failed.join("; "));
+      }
+    } finally {
+      abortRef.current = null;
+      setSaving(false);
+    }
+  }, [duration, framingChanged, getSourceForFormat, onClose, onSaveFraming, onSaved, openedResult, projectId, result, saving, source]);
 
   const save = useCallback(async () => {
     const current = editRef.current;
@@ -1014,14 +1076,24 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               ))}
             </select>
           ) : null}
+          {!clipMode && source && getSourceForFormat ? (
+            <OutlinedActionButton
+              onClick={() => void saveAllFormats()}
+              disabled={!edit || saving || outputDuration <= 0}
+              startIcon={<Layers size={16} />}
+              title="Save this edit in every enabled format, each framed for its shape"
+            >
+              Every format
+            </OutlinedActionButton>
+          ) : null}
           {!clipMode ? (
             <OutlinedActionButton
               onClick={() => void exportPremiere()}
               disabled={!edit || saving || outputDuration <= 0}
               startIcon={<Clapperboard size={16} />}
-              title="An editable Premiere Pro timeline (XML) with every cut as its own clip, captions as an SRT file, and the music"
+              title="An editable timeline for Premiere Pro or DaVinci Resolve (.xml) and Final Cut Pro (.fcpxml): every cut as its own clip, captions as an .srt file, and the music"
             >
-              Premiere Pro
+              Premiere / Resolve / FCP
             </OutlinedActionButton>
           ) : null}
           <OutlinedActionButton onClick={requestClose} disabled={saving} startIcon={<X size={16} />}>
