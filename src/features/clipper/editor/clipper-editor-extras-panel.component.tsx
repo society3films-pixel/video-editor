@@ -1,22 +1,25 @@
 import React, { useRef, useState } from "react";
-import { HStack, Text, VStack } from "@chakra-ui/react";
-import { Music, Trash2 } from "lucide-react";
+import { Box, HStack, Text, VStack } from "@chakra-ui/react";
+import { Image, Music, Trash2 } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
-import { DEFAULT_PROGRESS_BAR, DEFAULT_SOUND_EFFECTS, type ClipEdit } from "./clip-edit.util";
+import { DEFAULT_PROGRESS_BAR, DEFAULT_SOUND_EFFECTS, formatEditorTime, type ClipEdit } from "./clip-edit.util";
 import { saveEditorAsset } from "./editor-assets.util";
 import { Section, SliderRow, fieldStyle } from "./clipper-editor-side-panel.component";
 
 interface ExtrasPanelProps {
   edit: ClipEdit;
   onChange: (updater: (edit: ClipEdit) => ClipEdit) => void;
+  outputTime: number;
+  onSeekOutput?: (outputTime: number) => void;
+  defaultCoverTitle?: string;
 }
 
 const checkboxLabel: React.CSSProperties = { fontSize: 12, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" };
 
 /** Music, sound effects and the progress bar: things added on top of the clip when it's saved. */
-export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({ edit, onChange }) => {
+export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({ edit, onChange, outputTime, onSeekOutput, defaultCoverTitle }) => {
   const { theme } = useClipperUi();
   const fileRef = useRef<HTMLInputElement>(null);
   const [musicError, setMusicError] = useState<string | null>(null);
@@ -24,6 +27,7 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({ edit, onC
   const music = edit.music ?? null;
   const sfx = edit.sfx ?? null;
   const bar = edit.progressBar ?? null;
+  const cover = edit.cover ?? null;
 
   const pickMusic = async (file: File | undefined) => {
     if (!file) return;
@@ -44,6 +48,68 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({ edit, onC
 
   return (
     <VStack align="stretch" gap={3}>
+      <Section title="Cover">
+        {cover ? (
+          <>
+            <HStack gap={2}>
+              <Image size={14} />
+              <Box
+                as="button"
+                fontSize="xs"
+                flex={1}
+                textAlign="left"
+                cursor="pointer"
+                color={clipperTheme.accentGlow}
+                onClick={() => onSeekOutput?.(cover.time)}
+                title="Show the cover frame"
+              >
+                Frame at {formatEditorTime(cover.time)}
+              </Box>
+              <OutlinedActionButton
+                h="28px"
+                px={2}
+                fontSize="xs"
+                onClick={() => onChange((current) => (current.cover ? { ...current, cover: { ...current.cover, time: outputTime } } : current))}
+              >
+                Use this frame
+              </OutlinedActionButton>
+              <OutlinedActionButton h="28px" px={2} tone="danger" aria-label="Remove cover" onClick={() => onChange((current) => ({ ...current, cover: null }))}>
+                <Trash2 size={13} />
+              </OutlinedActionButton>
+            </HStack>
+            <input
+              value={cover.title}
+              maxLength={120}
+              onChange={(e) => onChange((current) => (current.cover ? { ...current, cover: { ...current.cover, title: e.target.value } } : current))}
+              placeholder="Cover title (optional)"
+              aria-label="Cover title"
+              style={fieldStyle}
+            />
+            <label style={checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={cover.firstFrames}
+                onChange={(e) => onChange((current) => (current.cover ? { ...current, cover: { ...current.cover, firstFrames: e.target.checked } } : current))}
+                style={{ accentColor: clipperTheme.accent }}
+              />
+              Also show it for the first frames (for apps that use the first frame as the cover)
+            </label>
+            <Text fontSize="xs" color={theme.text.muted}>
+              Saved as a PNG next to the video. Pause on the cover frame to preview the title.
+            </Text>
+          </>
+        ) : (
+          <OutlinedActionButton
+            startIcon={<Image size={14} />}
+            h="32px"
+            fontSize="xs"
+            onClick={() => onChange((current) => ({ ...current, cover: { time: outputTime, title: defaultCoverTitle ?? "", firstFrames: false } }))}
+          >
+            Use this frame as the cover
+          </OutlinedActionButton>
+        )}
+      </Section>
+
       <Section title="Music">
         <input
           ref={fileRef}

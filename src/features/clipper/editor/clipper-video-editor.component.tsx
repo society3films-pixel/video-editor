@@ -43,6 +43,7 @@ import {
   resetClipEditCuts,
   setCaptionGroupText,
   sourceToOutputTime,
+  outputToSourceTime,
   splitClipEditAt,
   trimClipEditSegment,
   type ClipEdit,
@@ -734,7 +735,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       appToast.success(
         outcome.kind === "saved" ? "Edited clip saved" : "Edited clip downloaded",
         outcome.kind === "saved"
-          ? `${outcome.fileName} was added to your exports. The original is unchanged.`
+          ? `${outcome.fileName} was added to your exports${outcome.coverFileName ? `, with its cover ${outcome.coverFileName} in the same folder` : ""}. The original is unchanged.`
           : outcome.fileName,
       );
       onSaved();
@@ -1100,6 +1101,11 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onChange={(updater) => applyEdit(updater, { coalesce: true })}
                 onAddText={addText}
                 activeSegmentId={selectedSegmentId ?? findSegmentAt(edit.segments, currentTime)?.id ?? null}
+                onSeekOutput={(time) => {
+                  videoRef.current?.pause();
+                  seek(outputToSourceTime(edit.segments, time));
+                }}
+                defaultCoverTitle={(openedResult ?? result)?.socialTitle ?? ""}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />

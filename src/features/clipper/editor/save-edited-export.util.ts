@@ -33,7 +33,7 @@ export interface SaveEditedExportOptions {
 
 type RenderToTarget = (
   outputSink: WritableStream<StreamTargetChunk> | undefined,
-) => Promise<{ blob?: Blob; width: number; height: number }>;
+) => Promise<{ blob?: Blob; width: number; height: number; cover?: Blob }>;
 
 /**
  * Builds the render for an edit. Caption/framing changes re-render the clip from the source
@@ -53,7 +53,7 @@ function buildEditRender(
   if (!needsSource) {
     return async (outputSink) => {
       const result = await renderClipEdit(await sourceFile(), edit, { signal, onProgress, outputSink });
-      return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height };
+      return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height, cover: result.cover };
     };
   }
   if (!source) {
@@ -84,13 +84,38 @@ function buildEditRender(
       outputSink,
       onProgress: (ratio) => onProgress?.(0.05 + sourceShare + ratio * (0.95 - sourceShare)),
     });
-    return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height };
+    return { blob: result.kind === "memory" ? result.blob : undefined, width: result.width, height: result.height, cover: result.cover };
   };
 }
 
 export type SaveEditedExportOutcome =
-  | { kind: "saved"; fileName: string }
-  | { kind: "downloaded"; fileName: string };
+  | { kind: "saved"; fileName: string; coverFileName?: string }
+  | { kind: "downloaded"; fileName: string; coverFileName?: string };
+
+function coverFileNameFor(videoFileName: string): string {
+  return videoFileName.replace(/\.mp4$/i, "") + "-cover.png";
+}
+
+/** Writes the cover PNG next to the export; failures only warn (the video is what matters). */
+async function saveCoverImage(projectId: string, videoFileName: string, cover: Blob): Promise<string | undefined> {
+  try {
+    const sink = await createClipperExportSink(projectId, coverFileNameFor(videoFileName));
+    if (!sink) return undefined;
+    try {
+      const writer = sink.writable.getWriter();
+      await writer.write({ type: "write", data: new Uint8Array(await cover.arrayBuffer()), position: 0 });
+      await writer.close();
+      await sink.finalize();
+      return sink.fileName;
+    } catch (error) {
+      await sink.abort().catch(() => {});
+      throw error;
+    }
+  } catch (error) {
+    console.warn("[ClipEditor] Could not save the cover image:", error);
+    return undefined;
+  }
+}
 
 function buildEditedFileName(original: ClipperFormatResult): string {
   const stem = resolveClipperExportFileName(original)
@@ -143,7 +168,8 @@ export async function saveEditedClipperExport(
     const result = await buildEditRender(projectId, sourceFile, edit, duration, options)(undefined);
     if (!result.blob) throw new Error("Unexpected render output.");
     downloadBlob(result.blob, fileName);
-    return { kind: "downloaded", fileName };
+    if (result.cover) downloadBlob(result.cover, coverFileNameFor(fileName));
+    return { kind: "downloaded", fileName, coverFileName: result.cover ? coverFileNameFor(fileName) : undefined };
   }
 
   return withClipperProjectRender(projectId, options.signal ?? new AbortController().signal, async (signal) => {
@@ -183,7 +209,8 @@ export async function saveEditedClipperExport(
         baseExportId: original.id,
         edit: toPersistedClipEdit(edit),
       }).catch((error) => console.warn("[ClipEditor] Could not save the edit for reopening:", error));
-      return { kind: "saved" as const, fileName: sink.fileName };
+      const coverFileName = result.cover ? await saveCoverImage(projectId, sink.fileName, result.cover) : undefined;
+      return { kind: "saved" as const, fileName: sink.fileName, coverFileName };
     } catch (error) {
       await sink.abort().catch(() => {});
       throw error;

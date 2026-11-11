@@ -15,8 +15,8 @@ import {
 import { createMediabunnyInput } from "../lib/media/mediabunny-file-source.util";
 import { EncodeBackpressure } from "../lib/media/encode-backpressure.util";
 import { assertExportAudioSupported, exportAudioConfig } from "../lib/media/video-frame-effect-audio.util";
-import { drawClipEditOverlays, punchInRect } from "./clip-edit-draw.util";
-import { getFadeFactor, getOutputDuration, soundEffectsActive, type ClipEdit } from "./clip-edit.util";
+import { drawClipEditOverlays, drawCoverTitle, punchInRect } from "./clip-edit-draw.util";
+import { COVER_FIRST_FRAMES_SEC, getFadeFactor, getOutputDuration, soundEffectsActive, type ClipEdit } from "./clip-edit.util";
 import { createAudioExtrasMixer, decodeAudioFile, soundEffectEvents, type DecodedAudio } from "./audio-extras.util";
 import { loadEditorAsset } from "./editor-assets.util";
 
@@ -27,9 +27,13 @@ export interface RenderClipEditOptions {
   onProgress?: (ratio: number) => void;
 }
 
-export type RenderClipEditResult =
+export type RenderClipEditResult = (
   | { kind: "disk"; width: number; height: number }
-  | { kind: "memory"; blob: Blob; width: number; height: number };
+  | { kind: "memory"; blob: Blob; width: number; height: number }
+) & {
+  /** PNG of the cover frame when the edit has a cover. */
+  cover?: Blob;
+};
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException("Edit render aborted", "AbortError");
@@ -38,6 +42,16 @@ function throwIfAborted(signal?: AbortSignal): void {
 /** Even dimensions keep H.264 encoders happy. */
 function even(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2);
+}
+
+function drawFrame(ctx: OffscreenCanvasRenderingContext2D, sample: VideoSample, zoom: number): void {
+  const { width, height } = ctx.canvas;
+  if (zoom > 1) {
+    const rect = punchInRect(width, height, zoom);
+    sample.draw(ctx, rect.x, rect.y, rect.width, rect.height);
+  } else {
+    sample.draw(ctx, 0, 0, width, height);
+  }
 }
 
 /**
@@ -95,6 +109,37 @@ export async function renderClipEdit(
     const effects = soundEffectsActive(edit) && edit.sfx ? { events: soundEffectEvents(segments, edit.sfx), volume: edit.sfx.volume } : null;
     const hasExtras = Boolean(music) || Boolean(effects?.events.length);
 
+    // Cover: the frame at the cover time with this edit's zoom and overlays, plus its title.
+    let coverCanvas: OffscreenCanvas | null = null;
+    if (edit.cover) {
+      const coverTime = Math.min(Math.max(0, edit.cover.time), Math.max(0, outputDuration - 0.01));
+      let offset = 0;
+      let segment = segments[segments.length - 1]!;
+      let sourceTime = segment.end - 0.01;
+      for (const candidate of segments) {
+        const length = candidate.end - candidate.start;
+        if (coverTime < offset + length) {
+          segment = candidate;
+          sourceTime = candidate.start + (coverTime - offset);
+          break;
+        }
+        offset += length;
+      }
+      const sample = await new VideoSampleSink(videoTrack).getSample(sourceTime);
+      if (sample) {
+        try {
+          coverCanvas = new OffscreenCanvas(width, height);
+          const coverCtx = coverCanvas.getContext("2d")!;
+          drawFrame(coverCtx, sample, segment.zoom ?? 1);
+          drawClipEditOverlays(coverCtx, { ...edit, fadeInSec: 0, fadeOutSec: 0, progressBar: null }, coverTime, outputDuration, width, height);
+          drawCoverTitle(coverCtx, edit.cover.title, width, height);
+        } finally {
+          sample.close();
+        }
+      }
+    }
+    const coverFirstFrames = coverCanvas && edit.cover?.firstFrames ? coverCanvas : null;
+
     const onAbort = () => void output.cancel();
     signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -123,14 +168,12 @@ export async function renderClipEdit(
             lastTimestamp = timestamp;
 
             ctx.clearRect(0, 0, width, height);
-            const zoom = segment.zoom ?? 1;
-            if (zoom > 1) {
-              const rect = punchInRect(width, height, zoom);
-              sample.draw(ctx, rect.x, rect.y, rect.width, rect.height);
+            if (coverFirstFrames && timestamp < COVER_FIRST_FRAMES_SEC) {
+              ctx.drawImage(coverFirstFrames, 0, 0);
             } else {
-              sample.draw(ctx, 0, 0, width, height);
+              drawFrame(ctx, sample, segment.zoom ?? 1);
+              drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height);
             }
-            drawClipEditOverlays(ctx, edit, timestamp, outputDuration, width, height);
 
             const outSample = new VideoSample(canvas, { timestamp, duration });
             try {
@@ -236,10 +279,11 @@ export async function renderClipEdit(
       signal?.removeEventListener("abort", onAbort);
     }
 
-    if (outputSink) return { kind: "disk", width, height };
+    const cover = coverCanvas ? await coverCanvas.convertToBlob({ type: "image/png" }) : undefined;
+    if (outputSink) return { kind: "disk", width, height, cover };
     const buffer = (target as BufferTarget).buffer;
     if (!buffer) throw new Error("Render produced no output.");
-    return { kind: "memory", blob: new Blob([buffer], { type: "video/mp4" }), width, height };
+    return { kind: "memory", blob: new Blob([buffer], { type: "video/mp4" }), width, height, cover };
   } finally {
     input.dispose();
   }

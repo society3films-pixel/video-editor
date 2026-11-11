@@ -64,7 +64,21 @@ export interface ClipEdit {
   sfx?: ClipSoundEffects | null;
   /** A bar along the edge that fills up as the clip plays. */
   progressBar?: ClipProgressBar | null;
+  /** Cover image (thumbnail) taken from a frame of the edited clip. */
+  cover?: ClipCover | null;
 }
+
+export interface ClipCover {
+  /** Output time of the frame. */
+  time: number;
+  /** Big title drawn on the cover; empty = the frame alone. */
+  title: string;
+  /** Also show the cover for the first frames of the video, for platforms that use the first frame. */
+  firstFrames: boolean;
+}
+
+/** How long the cover is shown at the start of the video when `firstFrames` is on. */
+export const COVER_FIRST_FRAMES_SEC = 0.1;
 
 export interface ClipMusic {
   /** Key of the audio file in the editor asset store (see editor-assets.util). */
@@ -286,7 +300,8 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     edit.textOverlays.length === 0 &&
     !edit.music &&
     !soundEffectsActive(edit) &&
-    !edit.progressBar
+    !edit.progressBar &&
+    !edit.cover
   );
 }
 

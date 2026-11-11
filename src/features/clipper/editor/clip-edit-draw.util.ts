@@ -84,6 +84,37 @@ export function drawProgressBar(ctx: Ctx2D, bar: ClipProgressBar, progress: numb
   ctx.fillRect(0, y, width * Math.min(1, Math.max(0, progress)), thickness);
 }
 
+/** The cover's title: big, bold, wrapped, centred in the upper part of the frame on a dark band. */
+export function drawCoverTitle(ctx: Ctx2D, title: string, width: number, height: number): void {
+  const text = title.trim();
+  if (!text) return;
+  const fontSize = Math.round(Math.min(width, height) * (width < height ? 0.095 : 0.075));
+  ctx.save();
+  ctx.font = `900 ${fontSize}px Inter, "Segoe UI", Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const lines = wrapLines(ctx, text.toUpperCase(), width * 0.86).slice(0, 4);
+  const lineHeight = fontSize * 1.12;
+  const blockHeight = lines.length * lineHeight;
+  const centerY = height * 0.3;
+  const gradient = ctx.createLinearGradient(0, centerY - blockHeight, 0, centerY + blockHeight);
+  gradient.addColorStop(0, "rgba(0,0,0,0)");
+  gradient.addColorStop(0.5, "rgba(0,0,0,0.55)");
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, centerY - blockHeight, width, blockHeight * 2);
+  lines.forEach((line, index) => {
+    const y = centerY - blockHeight / 2 + lineHeight * (index + 0.5);
+    ctx.lineJoin = "round";
+    ctx.lineWidth = fontSize * 0.16;
+    ctx.strokeStyle = "#000";
+    ctx.strokeText(line, width / 2, y);
+    ctx.fillStyle = index % 2 === 0 ? "#ffffff" : "#ffd400";
+    ctx.fillText(line, width / 2, y);
+  });
+  ctx.restore();
+}
+
 export function drawClipEditOverlays(
   ctx: Ctx2D,
   edit: ClipEdit,
@@ -91,7 +122,12 @@ export function drawClipEditOverlays(
   outputDuration: number,
   width: number,
   height: number,
+  options: { coverPreview?: boolean } = {},
 ): void {
+  if (options.coverPreview && edit.cover && Math.abs(outputTime - edit.cover.time) < 0.05) {
+    drawCoverTitle(ctx, edit.cover.title, width, height);
+    return;
+  }
   for (const overlay of edit.textOverlays) {
     if (outputTime >= overlay.start && outputTime < overlay.end) {
       drawTextOverlay(ctx, overlay, width, height);

@@ -21,6 +21,10 @@ interface ClipperEditorSidePanelProps {
   onAddText: () => void;
   /** The selected part, or the one under the playhead, for its punch-in zoom. */
   activeSegmentId?: string | null;
+  /** Moves the playhead to an output time (the cover frame). */
+  onSeekOutput?: (outputTime: number) => void;
+  /** Suggested cover title (the export's social title). */
+  defaultCoverTitle?: string;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -253,6 +257,8 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   onChange,
   onAddText,
   activeSegmentId = null,
+  onSeekOutput,
+  defaultCoverTitle,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -326,7 +332,13 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
         ) : null}
       </Section>
 
-      <ClipperEditorExtrasPanel edit={edit} onChange={onChange} />
+      <ClipperEditorExtrasPanel
+        edit={edit}
+        onChange={onChange}
+        outputTime={outputTime}
+        onSeekOutput={onSeekOutput}
+        defaultCoverTitle={defaultCoverTitle}
+      />
 
       <Section title="Fades">
         <SliderRow

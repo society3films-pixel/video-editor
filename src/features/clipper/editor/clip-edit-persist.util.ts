@@ -2,6 +2,7 @@ import type { CaptionGroup } from "../lib/media/transcription-export.util";
 import {
   MIN_SEGMENT_SEC,
   type ClipEdit,
+  type ClipCover,
   type ClipEditSegment,
   type ClipMusic,
   type ClipProgressBar,
@@ -55,6 +56,17 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     music: parseMusic(value.music),
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
+    cover: parseCover(value.cover),
+  };
+}
+
+function parseCover(raw: unknown): ClipCover | null {
+  const value = raw as Partial<ClipCover> | null | undefined;
+  if (!value || !isFiniteNumber(value.time)) return null;
+  return {
+    time: Math.max(0, value.time),
+    title: typeof value.title === "string" ? value.title.slice(0, 120) : "",
+    firstFrames: value.firstFrames === true,
   };
 }
 

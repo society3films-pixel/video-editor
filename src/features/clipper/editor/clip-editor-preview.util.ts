@@ -99,7 +99,9 @@ export function drawEditorPreviewFrame(
     ctx.fillRect(0, 0, size.width, size.height);
   } else {
     const total = getOutputDuration(edit.segments);
-    drawClipEditOverlays(ctx, edit, sourceToOutputTime(edit.segments, localTime), total, size.width, size.height);
+    drawClipEditOverlays(ctx, edit, sourceToOutputTime(edit.segments, localTime), total, size.width, size.height, {
+      coverPreview: true,
+    });
   }
   ctx.restore();
 }

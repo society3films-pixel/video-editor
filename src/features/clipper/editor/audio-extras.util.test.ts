@@ -58,6 +58,7 @@ describe("edit extras", () => {
       music: { assetId: "asset-1", name: "song.mp3", volume: 0.3, duck: true, startSec: 12 },
       sfx: { cuts: true, punchIns: false, volume: 0.5 },
       progressBar: { position: "top" as const, color: "#ff0000", thickness: 0.01 },
+      cover: { time: 2.5, title: "Big news", firstFrames: true },
     };
     expect(clipEditNeedsPostProcess(createInitialClipEdit(10), 10)).toBe(false);
     expect(clipEditNeedsPostProcess(edit, 10)).toBe(true);
@@ -65,5 +66,6 @@ describe("edit extras", () => {
     expect(restored.music).toEqual(edit.music);
     expect(restored.sfx).toEqual(edit.sfx);
     expect(restored.progressBar).toEqual(edit.progressBar);
+    expect(restored.cover).toEqual(edit.cover);
   });
 });
