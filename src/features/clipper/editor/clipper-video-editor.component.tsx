@@ -60,7 +60,7 @@ import {
   splitPanelsFromAi,
 } from "./clip-editor-preview.util";
 import { ClipperEditorTimeline } from "./clipper-editor-timeline.component";
-import { ClipperEditorSidePanel } from "./clipper-editor-side-panel.component";
+import { ClipperEditorSidePanel, Section } from "./clipper-editor-side-panel.component";
 import { ClipperEditorCaptionsPanel, ClipperEditorFramingPanel, type SpeakerDetectStatus } from "./clipper-editor-source-panels.component";
 import { resolveSourceFile, saveEditedClipperExport } from "./save-edited-export.util";
 import {
@@ -78,6 +78,8 @@ import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.uti
 import { detectSpeakers } from "./speaker-detect.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "./caption-keywords.util";
+import { checkClipFraming } from "./framing-check.util";
+import { ClipperFramingIssues } from "./clipper-framing-issues.component";
 
 interface ClipperVideoEditorProps {
   /**
@@ -181,6 +183,14 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   const previewContext = useMemo(
     () => (source && edit ? applyEditToFrameContext(source.frameContext, edit) : null),
     [source, edit],
+  );
+  // Re-checked as the framing changes, so fixes clear their warnings.
+  const framingIssues = useMemo(
+    () =>
+      source && previewContext && edit
+        ? checkClipFraming({ ...source, frameContext: previewContext, framingTrack: edit.framing ?? source.framingTrack })
+        : null,
+    [source, edit?.framing, previewContext?.faceCache],
   );
   const previewContextRef = useRef(previewContext);
   previewContextRef.current = previewContext;
@@ -1154,6 +1164,16 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 }
               />
             ) : (
+              <VStack align="stretch" gap={3}>
+              <Section title="Framing check">
+                <ClipperFramingIssues
+                  issues={framingIssues}
+                  onJump={(time) => {
+                    videoRef.current?.pause();
+                    seek(time);
+                  }}
+                />
+              </Section>
               <ClipperEditorFramingPanel
                 shot={{ ...shot, count: shotBoundaries.length + 1 }}
                 value={framingValue}
@@ -1183,6 +1203,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 }}
                 onRemoveShotBoundary={() => updateFraming((track) => removeShotBoundary(track, shot.start))}
               />
+              </VStack>
             )}
           </Box>
         </Flex>

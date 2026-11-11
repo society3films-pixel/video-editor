@@ -44,6 +44,8 @@ export interface ClipperPreviewProps {
   openingInStudio?: boolean;
   /** Opens the framing editor for a clip (framing is saved to the clip and used by every format). */
   onFixFraming?: (clipIndex: number) => void;
+  /** Checks the framing of these clips and shows a report. */
+  onCheckFraming?: (clipIndices: number[]) => void;
 }
 
 export interface UseClipperPreviewPlaybackParams {

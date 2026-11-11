@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, HStack } from "@chakra-ui/react";
-import { Crop, ExternalLink, ListOrdered } from "lucide-react";
+import { Crop, ExternalLink, ListOrdered, ScanFace } from "lucide-react";
 import {
   OutlinedActionButton,
   getOutlinedActionSurfaceProps,
@@ -41,6 +41,7 @@ export function ClipperPreviewSidePanel({
   onOpenInStudio,
   openingInStudio = false,
   onFixFraming,
+  onCheckFraming,
 }: ClipperPreviewSidePanelProps) {
   const listPreviews = activeClipPreviewsForMode(
     clipSourceMode,
@@ -118,6 +119,22 @@ export function ClipperPreviewSidePanel({
               {...TOOLBAR_ACTION_BUTTON_PROPS}
             >
               Fix framing
+            </OutlinedActionButton>
+          ) : null}
+
+          {onCheckFraming ? (
+            <OutlinedActionButton
+              startIcon={<ScanFace size={16} />}
+              onClick={() => {
+                pausePreview();
+                onCheckFraming(listPreviews.map((preview) => preview.clip.index));
+              }}
+              disabled={listPreviews.length === 0}
+              flexShrink={0}
+              title="Finds shots where faces are cut off, someone is out of frame or the camera is shaky"
+              {...TOOLBAR_ACTION_BUTTON_PROPS}
+            >
+              Check framing
             </OutlinedActionButton>
           ) : null}
 

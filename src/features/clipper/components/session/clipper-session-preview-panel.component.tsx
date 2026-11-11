@@ -1,3 +1,5 @@
+import { checkClipFraming } from "../../editor/framing-check.util";
+import { ClipperFramingReport, type FramingReportEntry } from "../preview/clipper-framing-report.component";
 import React, { useMemo, useState } from "react";
 import { Box, Text } from "@chakra-ui/react";
 import { ClipperPreview } from "../preview/clipper-preview.component";
@@ -65,6 +67,17 @@ export const ClipperSessionPreviewPanel: React.FC<ClipperSessionPreviewPanelProp
     setFramingEditor({ clipIndex, source });
   };
 
+  const [framingReport, setFramingReport] = useState<FramingReportEntry[] | null>(null);
+  const checkFraming = (clipIndices: number[]) => {
+    if (!DEFAULT_FRAMING_FORMAT) return;
+    setFramingReport(
+      clipIndices.map((clipIndex) => {
+        const source = getClipEditorSourceForClip(clipIndex, DEFAULT_FRAMING_FORMAT.id);
+        return { clipIndex, issues: source ? checkClipFraming(source) : null };
+      }),
+    );
+  };
+
   const switchFramingFormat = (formatId: string) => {
     if (!framingEditor) return;
     const source = getClipEditorSourceForClip(framingEditor.clipIndex, formatId);
@@ -119,7 +132,19 @@ export const ClipperSessionPreviewPanel: React.FC<ClipperSessionPreviewPanelProp
         autoPartsResegmenting={autoPartsResegmenting}
         settingsDrawerVisible={settingsDrawerVisible}
         onFixFraming={openFramingEditor}
+        onCheckFraming={checkFraming}
       />
+      {framingReport ? (
+        <ClipperFramingReport
+          entries={framingReport}
+          formatLabel={DEFAULT_FRAMING_FORMAT?.label ?? "the default format"}
+          onClose={() => setFramingReport(null)}
+          onFix={(clipIndex) => {
+            setFramingReport(null);
+            openFramingEditor(clipIndex);
+          }}
+        />
+      ) : null}
       {framingEditor ? (
         <ClipperVideoEditor
           projectId={project.id}
