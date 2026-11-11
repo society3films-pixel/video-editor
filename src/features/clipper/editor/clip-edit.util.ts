@@ -181,7 +181,7 @@ export function resetClipEditCuts(edit: ClipEdit, sourceDuration: number): ClipE
   return { ...edit, segments: createInitialClipEdit(sourceDuration).segments };
 }
 
-function clampOverlaysToDuration(edit: ClipEdit): ClipEdit {
+export function clampOverlaysToDuration(edit: ClipEdit): ClipEdit {
   const duration = getOutputDuration(edit.segments);
   const textOverlays = edit.textOverlays
     .map((overlay) => ({
@@ -398,4 +398,34 @@ export function setCaptionGroupText(groups: readonly CaptionGroup[], index: numb
     });
   }
   return groups.map((item, i) => (i === index ? { ...item, words } : item));
+}
+
+/**
+ * Removes a source-time range from the kept parts, splitting parts as needed. Refuses to cut the
+ * whole clip (returns the edit unchanged).
+ */
+export function cutSourceRange(edit: ClipEdit, start: number, end: number): ClipEdit {
+  if (end - start < 0.01) return edit;
+  const segments = edit.segments.flatMap((segment) => {
+    if (end <= segment.start || start >= segment.end) return [segment];
+    const parts: ClipEditSegment[] = [];
+    if (start - segment.start >= MIN_SEGMENT_SEC) parts.push({ ...segment, id: createEditId("seg"), end: start });
+    if (segment.end - end >= MIN_SEGMENT_SEC) parts.push({ ...segment, id: createEditId("seg"), start: end });
+    return parts;
+  });
+  if (segments.length === 0) return edit;
+  return clampOverlaysToDuration({ ...edit, segments });
+}
+
+/** Zooms the kept footage between two source times (splitting parts at the edges). */
+export function zoomSourceRange(edit: ClipEdit, start: number, end: number, zoom: number): ClipEdit {
+  const split = splitClipEditAt(splitClipEditAt(edit, start), end);
+  return {
+    ...split,
+    segments: split.segments.map((segment) =>
+      segment.start >= start - 0.01 && segment.end <= end + 0.01
+        ? { ...segment, zoom: zoom > 1.001 ? Math.min(2, zoom) : undefined }
+        : segment,
+    ),
+  };
 }

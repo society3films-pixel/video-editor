@@ -70,6 +70,10 @@ import {
   type AutoEditOptions,
 } from "./auto-edit.util";
 import { ClipperAutoEditPanel } from "./clipper-auto-edit-panel.component";
+import { ClipperAiEditorPanel, type AiEditorTurn } from "./ai-editor/clipper-ai-editor-panel.component";
+import { requestAiEdit, type AiEditorProvider } from "./ai-editor/ai-editor-client.util";
+import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
+import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -104,7 +108,7 @@ const HISTORY_COALESCE_MS = 600;
 const HISTORY_LIMIT = 100;
 const DRAG_THRESHOLD_PX = 4;
 
-type PanelTab = "edit" | "captions" | "framing";
+type PanelTab = "edit" | "ai" | "captions" | "framing";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -597,6 +601,44 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     source,
   ]);
 
+  const runAiEdit = useCallback(
+    async (instruction: string, provider: AiEditorProvider, model: string): Promise<AiEditorTurn> => {
+      const current = editRef.current;
+      if (!current) return { instruction, summary: "", applied: [], skipped: [], error: "The editor isn't ready yet." };
+      videoRef.current?.pause();
+      const captionGroups = current.captionGroups ?? source?.frameContext.captionGroups ?? [];
+      const shotBoundaries = current.framing && source ? framingShotBoundaries(current.framing, source.aiShotBoundaries) : [];
+      try {
+        const messages = buildAiEditMessages(instruction, current, {
+          duration,
+          words: autoEditWords,
+          captionGroups,
+          shotBoundaries,
+          canChangeSource: Boolean(source),
+          title: (openedResult ?? result)?.socialTitle,
+        });
+        const plan = parseAiEditReply(await requestAiEdit(provider, model, messages));
+        // Apply to the latest state, in case the user edited while the AI was thinking.
+        const latest = editRef.current ?? current;
+        const outcome = applyAiEditPlan(latest, plan, {
+          duration,
+          words: autoEditWords,
+          captionGroups,
+          aiShotBoundaries: source?.aiShotBoundaries ?? [],
+          canChangeSource: Boolean(source),
+        });
+        if (outcome.applied.length > 0) {
+          applyEdit(() => outcome.edit);
+          setSelectedSegmentId(null);
+        }
+        return { instruction, summary: plan.summary, applied: outcome.applied, skipped: outcome.skipped };
+      } catch (error) {
+        return { instruction, summary: "", applied: [], skipped: [], error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    [applyEdit, autoEditWords, duration, openedResult, result, source],
+  );
+
   const save = useCallback(async () => {
     const current = editRef.current;
     if (!current || saving) return;
@@ -717,6 +759,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     ? [{ id: "framing", label: "Framing" }]
     : [
         { id: "edit", label: "Edit" },
+        { id: "ai", label: "AI" },
         { id: "captions", label: "Captions" },
         { id: "framing", label: "Framing" },
       ];
@@ -996,6 +1039,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onAddText={addText}
                 activeSegmentId={selectedSegmentId ?? findSegmentAt(edit.segments, currentTime)?.id ?? null}
               />
+            ) : tab === "ai" ? (
+              <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />
             ) : !source ? (
               <VStack align="stretch" gap={2} p={4} borderRadius="lg" border="1px solid" borderColor={theme.surface.hover}>
                 <Text fontSize="sm" fontWeight="semibold">
