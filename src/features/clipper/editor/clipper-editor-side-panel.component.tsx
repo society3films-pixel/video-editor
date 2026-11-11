@@ -5,7 +5,8 @@ import { OutlinedActionButton } from "../../../shared/components/buttons/outline
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.component";
-import type { WordCue } from "../lib/media/transcription-export.util";
+import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
+import { ClipperEditTemplates } from "./clipper-edit-templates.component";
 import {
   formatEditorTime,
   type ClipEdit,
@@ -30,6 +31,8 @@ interface ClipperEditorSidePanelProps {
   words?: readonly WordCue[];
   sourceDuration?: number;
   onPreviewHook?: () => void;
+  /** The clip's caption lines as shown, for templates. */
+  captionGroups?: readonly CaptionGroup[];
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -267,6 +270,7 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   words,
   sourceDuration,
   onPreviewHook,
+  captionGroups,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -339,6 +343,10 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
           </Text>
         ) : null}
       </Section>
+
+      {words ? (
+        <ClipperEditTemplates edit={edit} captionGroups={captionGroups ?? []} words={words} sourceDuration={sourceDuration ?? 0} onChange={onChange} />
+      ) : null}
 
       <ClipperEditorExtrasPanel
         edit={edit}

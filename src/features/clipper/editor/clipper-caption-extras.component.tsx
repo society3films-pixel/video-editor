@@ -5,7 +5,8 @@ import { OutlinedActionButton } from "../../../shared/components/buttons/outline
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
-import type { ClipEdit } from "./clip-edit.util";
+import type { ClipCaptionStyle, ClipEdit } from "./clip-edit.util";
+import { CLIPPER_CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID, type ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
 import { Section, fieldStyle } from "./clipper-editor-side-panel.component";
 import {
   addEmojiAutomatically,
@@ -62,8 +63,48 @@ export const ClipperCaptionExtras: React.FC<CaptionExtrasProps> = ({ edit, group
   };
 
   if (!groups.length) return null;
+  const style = edit.captionStyle ?? null;
+  const setStyle = (patch: Partial<ClipCaptionStyle> | null) =>
+    onChange((current) => ({
+      ...current,
+      captionStyle: patch === null ? null : { presetId: DEFAULT_CAPTION_PRESET_ID, position: "bottom", size: "medium", ...current.captionStyle, ...patch },
+    }));
   return (
     <VStack align="stretch" gap={3}>
+      <Section title="Caption style">
+        <select
+          value={style?.presetId ?? ""}
+          onChange={(e) => setStyle(e.target.value ? { presetId: e.target.value as ClipperCaptionPresetId } : null)}
+          style={fieldStyle}
+          aria-label="Caption style for this clip"
+        >
+          <option value="">Project style</option>
+          {CLIPPER_CAPTION_PRESETS.map((preset) => (
+            <option key={preset.id} value={preset.id}>
+              {preset.label}
+            </option>
+          ))}
+        </select>
+        {style ? (
+          <HStack gap={2}>
+            <select value={style.position} onChange={(e) => setStyle({ position: e.target.value as ClipCaptionStyle["position"] })} style={{ ...fieldStyle, width: "auto" }} aria-label="Caption position">
+              <option value="top">Top</option>
+              <option value="center">Middle</option>
+              <option value="bottom">Bottom</option>
+            </select>
+            <select value={style.size} onChange={(e) => setStyle({ size: e.target.value as ClipCaptionStyle["size"] })} style={{ ...fieldStyle, width: "auto" }} aria-label="Caption size">
+              <option value="extra-small">Extra small</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </HStack>
+        ) : null}
+        <Text fontSize="xs" color={theme.text.muted}>
+          Only this clip; the project's style stays as it is.
+        </Text>
+      </Section>
+
       <Section title="Emoji">
         <Text fontSize="xs" color={theme.text.muted}>
           An emoji pops in above a line when its word is spoken.{emojiLines ? ` ${emojiLines} line${emojiLines === 1 ? "" : "s"} have one.` : ""}

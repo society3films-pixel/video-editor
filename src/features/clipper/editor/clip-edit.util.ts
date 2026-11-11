@@ -13,6 +13,8 @@
  */
 import type { ClipHook } from "./hook.util";
 import type { ClipInsert } from "./broll.util";
+import type { ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
+import type { ClipperCaptionPosition, ClipperCaptionSize } from "../settings/settings.util";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import {
   mergeShotBoundaries,
@@ -74,6 +76,14 @@ export interface ClipEdit {
   hook?: ClipHook | null;
   /** B-roll images and videos over parts of the edit (see broll.util). */
   inserts?: ClipInsert[];
+  /** Caption look for this clip instead of the project's; null = project style. */
+  captionStyle?: ClipCaptionStyle | null;
+}
+
+export interface ClipCaptionStyle {
+  presetId: ClipperCaptionPresetId;
+  position: ClipperCaptionPosition;
+  size: ClipperCaptionSize;
 }
 
 export interface ClipCover {
@@ -287,7 +297,7 @@ export function getFadeFactor(edit: Pick<ClipEdit, "fadeInSec" | "fadeOutSec">, 
 
 /** True when the edit changes the captions, which requires re-rendering from the source. */
 export function clipEditChangesCaptions(edit: ClipEdit): boolean {
-  return edit.captionGroups !== null || edit.captionsVisible !== null;
+  return edit.captionGroups !== null || edit.captionsVisible !== null || Boolean(edit.captionStyle);
 }
 
 export function framingTracksEqual(a: ClipFramingTrack | null, b: ClipFramingTrack | null): boolean {

@@ -1,4 +1,5 @@
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
+import { normalizeCaptionPresetId } from "../lib/captions/caption-presets.util";
 import {
   MIN_SEGMENT_SEC,
   type ClipEdit,
@@ -57,6 +58,14 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
     cover: parseCover(value.cover),
+    captionStyle:
+      value.captionStyle && typeof value.captionStyle.presetId === "string"
+        ? {
+            presetId: normalizeCaptionPresetId(value.captionStyle.presetId),
+            position: ["top", "center", "bottom"].includes(value.captionStyle.position) ? value.captionStyle.position : "bottom",
+            size: ["extra-small", "small", "medium", "large"].includes(value.captionStyle.size) ? value.captionStyle.size : "medium",
+          }
+        : null,
     inserts: (Array.isArray(value.inserts) ? value.inserts : [])
       .filter((i) => i && typeof i.assetId === "string" && isFiniteNumber(i.start) && isFiniteNumber(i.end) && i.end > i.start)
       .map((i) => ({

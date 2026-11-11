@@ -20,11 +20,13 @@ import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
 import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
 import { requestEdit } from "./ai-editor/ai-editor-providers.util";
 import type { AiChoice } from "./ai-editor/ai-choice.util";
+import { applyTemplate, type EditTemplate } from "./edit-templates.util";
 
 export interface BatchEditOptions {
   auto: AutoEditOptions | null;
   instruction: string;
   choice: AiChoice | null;
+  template?: EditTemplate | null;
 }
 
 export type BatchEditOutcome =
@@ -87,6 +89,14 @@ export async function batchEditExport(
       },
       options.auto,
     ).edit;
+  }
+
+  if (options.template) {
+    edit = applyTemplate(edit, options.template, {
+      captionGroups: edit.captionGroups ?? source.frameContext.captionGroups,
+      words,
+      duration,
+    });
   }
 
   if (options.instruction.trim() && options.choice) {

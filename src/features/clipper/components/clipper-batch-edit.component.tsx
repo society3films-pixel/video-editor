@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box, Button, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
 import { Layers } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
@@ -9,6 +9,7 @@ import type { ClipEditorBridge } from "../editor/clip-editor-source.util";
 import { DEFAULT_AUTO_EDIT_OPTIONS, type AutoEditOptions } from "../editor/auto-edit.util";
 import { batchEditExport, latestExportPerClip } from "../editor/batch-edit.util";
 import { describeAiChoice, resolveAiChoice } from "../editor/ai-editor/ai-choice.util";
+import { loadTemplates, type EditTemplate } from "../editor/edit-templates.util";
 
 interface ClipperBatchEditProps {
   projectId: string;
@@ -36,9 +37,15 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
   const [status, setStatus] = useState<{ index: number; total: number; label: string; ratio: number } | null>(null);
   const [log, setLog] = useState<Array<{ text: string; error?: boolean }>>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const [templates, setTemplates] = useState<EditTemplate[]>([]);
+  const [templateId, setTemplateId] = useState("");
+  useEffect(() => {
+    if (open) void loadTemplates().then(setTemplates);
+  }, [open]);
+  const template = templates.find((t) => t.id === templateId) ?? null;
 
   const targets = latestExportPerClip(exports);
-  const canRun = Boolean(bridge) && targets.length > 0 && (useAuto || instruction.trim().length > 0);
+  const canRun = Boolean(bridge) && targets.length > 0 && (useAuto || instruction.trim().length > 0 || Boolean(template));
 
   const run = async () => {
     if (!bridge) return;
@@ -66,7 +73,7 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
             item,
             exports,
             bridge,
-            { auto: useAuto ? steps : null, instruction, choice },
+            { auto: useAuto ? steps : null, instruction, choice, template },
             { signal: controller.signal, onProgress: (ratio) => setStatus({ index, total: targets.length, label, ratio }) },
           );
           entries.push(
@@ -121,6 +128,24 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
                 </label>
               ))}
             </HStack>
+          ) : null}
+          {templates.length ? (
+            <label style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
+              Template
+              <select
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                aria-label="Template for every clip"
+                style={{ background: "rgba(0,0,0,0.35)", color: "inherit", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "3px 6px", fontSize: 13 }}
+              >
+                <option value="">None</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : null}
           <textarea
             value={instruction}

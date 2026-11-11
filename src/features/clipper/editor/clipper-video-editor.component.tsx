@@ -81,6 +81,7 @@ import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "./caption-
 import { checkClipFraming } from "./framing-check.util";
 import { ClipperFramingIssues } from "./clipper-framing-issues.component";
 import { ClipperCaptionExtras } from "./clipper-caption-extras.component";
+import { PreviewSounds } from "./preview-sounds.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -294,6 +295,12 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   }, []);
 
   // One loop drives playback rules (skip gaps and cuts), preview volume and canvas drawing.
+  const previewSoundsRef = useRef(new PreviewSounds());
+  useEffect(() => {
+    const sounds = previewSoundsRef.current;
+    return () => sounds.dispose();
+  }, []);
+
   // While set, playback is previewing the hook (which may sit in a cut part) before the clip.
   const hookPreviewRef = useRef<{ end: number } | null>(null);
   const previewHook = useCallback(() => {
@@ -364,7 +371,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         const local = map.toLocal(video.currentTime);
         const total = getOutputDuration(current.segments);
         const gain = current.volume * getFadeFactor(current, sourceToOutputTime(current.segments, local), total);
-        video.muted = gain <= 0;
+        const bleeping = previewSoundsRef.current.update(current, !video.paused, sourceToOutputTime(current.segments, local), local);
+        video.muted = gain <= 0 || bleeping;
         video.volume = Math.min(1, Math.max(0, gain));
         setCurrentTime(local);
         const music = musicAudioRef.current;
@@ -1148,6 +1156,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 words={autoEditWords}
                 sourceDuration={duration}
                 onPreviewHook={previewHook}
+                captionGroups={captionGroups}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />
