@@ -167,7 +167,8 @@ export function createAudioExtrasMixer(config: AudioExtrasConfig, sampleRate: nu
   const musicStep = music ? music.audio.sampleRate / sampleRate : 1;
   const musicLength = music ? music.audio.channels[0]!.length : 0;
 
-  return (planar: Float32Array, channels: number, frameCount: number, firstOutputTime: number): void => {
+  /** `performance` (optional, per sample 0..1): the clip's own music is playing; background music steps aside. */
+  return (planar: Float32Array, channels: number, frameCount: number, firstOutputTime: number, performance?: Float32Array | null): void => {
     for (let i = 0; i < frameCount; i++) {
       const t = firstOutputTime + i / sampleRate;
       let extraL = 0;
@@ -180,7 +181,7 @@ export function createAudioExtrasMixer(config: AudioExtrasConfig, sampleRate: nu
         const target = music.duck && envelope > SPEECH_THRESHOLD ? DUCK_LEVEL : 1;
         duck += (target - duck) * (target < duck ? duckDown : duckUp);
         const tail = Math.min(1, Math.max(0, (config.outputDuration - t) / MUSIC_TAIL_FADE_SEC));
-        const gain = music.volume * duck * tail * getFadeFactor(config.fades, t, config.outputDuration);
+        const gain = music.volume * duck * tail * getFadeFactor(config.fades, t, config.outputDuration) * (1 - (performance?.[i] ?? 0));
         // Loop the song if the clip is longer.
         const position = (t * sampleRate * musicStep) % musicLength;
         const index = Math.floor(position);

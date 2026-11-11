@@ -87,6 +87,7 @@ import { exportToPremiere } from "./premiere-export.util";
 import { measureClipColor } from "./color-measure.util";
 import { learnFromFraming } from "./framing-learning.util";
 import { faceCenterInOutput } from "./punch-in-center.util";
+import { detectMusicSections } from "./music-detect.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -666,12 +667,17 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     setAutoEditRunning(true);
     try {
       const options: AutoEditOptions = clipMode
-        ? { cutPauses: false, fixFraming: autoEditOptions.fixFraming, punchIns: false, hookTitle: false, levelVolume: false, highlightKeywords: false, tightenTurns: false }
+        ? { cutPauses: false, fixFraming: autoEditOptions.fixFraming, punchIns: false, hookTitle: false, levelVolume: false, highlightKeywords: false, tightenTurns: false, protectMusic: false }
         : autoEditOptions;
       let levelGain: number | null = null;
       if (options.levelVolume && result) {
         const measured = await measureLevelGain(await resolveSourceFile(result, projectId)).catch(() => null);
         levelGain = measured?.gain ?? null;
+      }
+      // Songs and performances are found first so no cut lands inside them.
+      let musicSections = current?.musicSections ?? undefined;
+      if (options.protectMusic && result && !musicSections) {
+        musicSections = await detectMusicSections(await resolveSourceFile(result, projectId), autoEditWords).catch(() => undefined);
       }
       // Tighter turns need to know who's talking: find out once if two people are tracked.
       if (options.tightenTurns && options.cutPauses && current?.framing && !current.framing.speakers?.length && source && autoEditFaceCache) {
@@ -700,6 +706,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           // Captions can only be changed when editing an export (clip mode edits framing only).
           captionGroups: result ? (current.captionGroups ?? source?.frameContext.captionGroups) : undefined,
           punchInCenter: source ? (start, end) => faceCenterInOutput(source, start, end) : undefined,
+          musicSections,
         },
         options,
       );
@@ -1296,6 +1303,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 captionGroups={captionGroups}
                 onMeasureColor={source ? () => measureClipColor(source) : undefined}
                 punchInCenter={source ? (start, end) => faceCenterInOutput(source, start, end) : undefined}
+                onFindMusic={result ? async () => detectMusicSections(await resolveSourceFile(result, projectId), autoEditWords) : undefined}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />

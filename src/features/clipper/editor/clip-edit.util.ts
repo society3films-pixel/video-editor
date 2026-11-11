@@ -16,6 +16,7 @@ import type { ClipInsert } from "./broll.util";
 import type { StabilizeSettings } from "./stabilize.util";
 import type { VoiceCleanupSettings } from "./voice-cleanup.util";
 import type { BeatPulse } from "./beat-sync.util";
+import type { MusicSection } from "./music-detect.util";
 import { isColorGradeActive, type ColorGrade } from "../engine/render/color-grade.util";
 import type { CaptionStyleCustom, ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
 import type { ClipperCaptionPosition, ClipperCaptionSize } from "../settings/settings.util";
@@ -92,6 +93,10 @@ export interface ClipEdit {
   voiceCleanup?: VoiceCleanupSettings | null;
   /** Small zoom pulse on the music's beats (see beat-sync.util). */
   beatPulse?: BeatPulse | null;
+  /** Where the clip has music playing (songs, performances), clip-local; see music-detect.util. */
+  musicSections?: MusicSection[] | null;
+  /** Bring performances to the speech level using each section's gain. */
+  balanceMusic?: boolean;
 }
 
 export interface ClipCaptionStyle {
@@ -341,7 +346,8 @@ export function clipEditNeedsPostProcess(edit: ClipEdit, sourceDuration: number)
     !edit.inserts?.length &&
     !edit.stabilize &&
     !(edit.voiceCleanup && (edit.voiceCleanup.denoise || edit.voiceCleanup.compress)) &&
-    !edit.beatPulse?.beats.length
+    !edit.beatPulse?.beats.length &&
+    !(edit.balanceMusic && edit.musicSections?.length)
   );
 }
 

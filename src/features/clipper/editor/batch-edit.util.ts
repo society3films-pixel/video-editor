@@ -23,6 +23,7 @@ import type { AiChoice } from "./ai-editor/ai-choice.util";
 import { applyTemplate, type EditTemplate } from "./edit-templates.util";
 import { measureClipColor } from "./color-measure.util";
 import { faceCenterInOutput } from "./punch-in-center.util";
+import { detectMusicSections } from "./music-detect.util";
 
 export interface BatchEditOptions {
   auto: AutoEditOptions | null;
@@ -72,6 +73,10 @@ export async function batchEditExport(
       levelGain = measured?.gain ?? null;
     }
     const faceCache = source.frameContext.faceCache;
+    const musicSections =
+      options.auto.protectMusic && !edit.musicSections
+        ? await detectMusicSections(await resolveSourceFile(target.base, projectId), words, run.signal).catch(() => undefined)
+        : (edit.musicSections ?? undefined);
     edit = applyAutoEdit(
       edit,
       {
@@ -89,6 +94,7 @@ export async function batchEditExport(
         levelGain,
         captionGroups: edit.captionGroups ?? source.frameContext.captionGroups,
         punchInCenter: (start, end) => faceCenterInOutput(source, start, end),
+        musicSections,
       },
       options.auto,
     ).edit;

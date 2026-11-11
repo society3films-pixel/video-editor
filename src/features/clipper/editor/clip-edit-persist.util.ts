@@ -68,6 +68,12 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
     sfx: parseSfx(value.sfx),
     progressBar: parseProgressBar(value.progressBar),
     cover: parseCover(value.cover),
+    musicSections: Array.isArray(value.musicSections)
+      ? value.musicSections
+          .filter((m) => m && isFiniteNumber(m.start) && isFiniteNumber(m.end) && m.end > m.start)
+          .map((m) => ({ start: m.start, end: m.end, gain: isFiniteNumber(m.gain) ? m.gain : 1 }))
+      : null,
+    balanceMusic: value.balanceMusic === true,
     voiceCleanup:
       value.voiceCleanup && typeof value.voiceCleanup === "object"
         ? { denoise: value.voiceCleanup.denoise === true, compress: value.voiceCleanup.compress === true }

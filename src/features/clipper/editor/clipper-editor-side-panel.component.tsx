@@ -8,6 +8,7 @@ import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.componen
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import { ClipperEditTemplates } from "./clipper-edit-templates.component";
 import type { ColorCorrection } from "../engine/render/color-grade.util";
+import type { MusicSection } from "./music-detect.util";
 import {
   formatEditorTime,
   type ClipEdit,
@@ -36,6 +37,7 @@ interface ClipperEditorSidePanelProps {
   captionGroups?: readonly CaptionGroup[];
   onMeasureColor?: () => Promise<ColorCorrection | null>;
   punchInCenter?: (start: number, end: number) => { x: number; y: number } | null;
+  onFindMusic?: () => Promise<MusicSection[]>;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -276,6 +278,7 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   captionGroups,
   onMeasureColor,
   punchInCenter,
+  onFindMusic,
 }) => {
   const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
   const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
@@ -377,6 +380,8 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
         sourceDuration={sourceDuration}
         onPreviewHook={onPreviewHook}
         onMeasureColor={onMeasureColor}
+        onFindMusic={onFindMusic}
+        captionGroups={captionGroups}
       />
 
       <Section title="Fades">

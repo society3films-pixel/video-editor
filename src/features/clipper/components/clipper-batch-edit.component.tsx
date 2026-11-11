@@ -19,6 +19,7 @@ interface ClipperBatchEditProps {
 }
 
 const STEP_LABELS: Array<[keyof AutoEditOptions, string]> = [
+  ["protectMusic", "Protect songs"],
   ["cutPauses", "Cut pauses & fillers"],
   ["tightenTurns", "Tighten conversation"],
   ["fixFraming", "Fix framing"],

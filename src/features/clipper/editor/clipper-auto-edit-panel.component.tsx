@@ -46,6 +46,12 @@ export const ClipperAutoEditPanel: React.FC<ClipperAutoEditPanelProps> = ({
       unavailable: noTranscript,
     },
     {
+      key: "protectMusic",
+      label: "Protect songs and performances",
+      description: "Finds where music is playing and never cuts inside it (fillers and pauses there are kept).",
+      unavailable: hasExportAudio ? undefined : "Available when editing an export.",
+    },
+    {
       key: "tightenTurns",
       label: "Tighten conversation",
       description: "With two people, cuts the pauses where the speaker changes extra short (finds who's talking first).",

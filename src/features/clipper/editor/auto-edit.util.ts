@@ -6,6 +6,7 @@
 import { AudioBufferSink } from "mediabunny";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import { highlightKeywords } from "./caption-keywords.util";
+import type { MusicSection } from "./music-detect.util";
 import type { FaceBoxSample } from "../shared/face-samples.util";
 import type { ClipperClipSegmentWindow } from "../engine/segmentation/segmentation.types";
 import { selectDominantFacePair, facesFitSingleCrop } from "../engine/reframe/collage/track.util";
@@ -40,6 +41,8 @@ export interface PauseCutOptions {
   removeFillers: boolean;
   /** Times where the speaker changes; gaps there are cut tighter (conversation pacing). */
   turnBoundaries?: readonly number[];
+  /** Ranges never cut into (songs and performances); filler words inside them are kept. */
+  protectRanges?: ReadonlyArray<{ start: number; end: number }>;
 }
 
 /** Longest silence kept at a change of speaker, and the padding there. */
@@ -73,9 +76,16 @@ export function planPauseCuts(
   duration: number,
   options: PauseCutOptions = DEFAULT_PAUSE_CUT_OPTIONS,
 ): PauseCutPlan | null {
+  const protect = options.protectRanges ?? [];
+  const inProtected = (word: WordCue) => protect.some((range) => word.end > range.start && word.start < range.end);
   const spoken = words.filter((word) => !word.deleted && word.end > word.start && word.text.trim());
-  const fillerCount = options.removeFillers ? spoken.filter((word) => isFillerWord(word.text)).length : 0;
-  const speech = spoken.filter((word) => !(options.removeFillers && isFillerWord(word.text)));
+  const isCutFiller = (word: WordCue) => options.removeFillers && isFillerWord(word.text) && !inProtected(word);
+  const fillerCount = spoken.filter(isCutFiller).length;
+  // A protected range counts as one long "word", so nothing inside it is cut.
+  const speech = [
+    ...spoken.filter((word) => !isCutFiller(word) && !inProtected(word)),
+    ...protect.map((range) => ({ text: "♪", start: range.start, end: Math.min(duration, range.end) })),
+  ];
   if (speech.length === 0 || duration <= 0) return null;
 
   // Merge words into speech runs, splitting wherever the silence is too long (shorter at a
@@ -332,6 +342,8 @@ export interface AutoEditOptions {
   highlightKeywords: boolean;
   /** Tighter cuts where the speaker changes (needs who's talking, from the Framing tab). */
   tightenTurns: boolean;
+  /** Find songs and performances and never cut into them. */
+  protectMusic: boolean;
 }
 
 export const DEFAULT_AUTO_EDIT_OPTIONS: AutoEditOptions = {
@@ -342,6 +354,7 @@ export const DEFAULT_AUTO_EDIT_OPTIONS: AutoEditOptions = {
   levelVolume: true,
   highlightKeywords: true,
   tightenTurns: true,
+  protectMusic: true,
 };
 
 export interface AutoEditInputs {
@@ -357,6 +370,8 @@ export interface AutoEditInputs {
   levelGain?: number | null;
   /** The clip's caption lines as currently rendered, for keyword highlighting. */
   captionGroups?: readonly CaptionGroup[];
+  /** Songs and performances found in the clip (protected from cuts when protectMusic is on). */
+  musicSections?: readonly MusicSection[];
   /** Where to aim punch-ins (the speaker's face in the framed clip). */
   punchInCenter?: (start: number, end: number) => { x: number; y: number } | null;
 }
@@ -385,6 +400,7 @@ export function applyAutoEdit(
     const plan = planPauseCuts(inputs.words, inputs.duration, {
       ...DEFAULT_PAUSE_CUT_OPTIONS,
       turnBoundaries: speakers.slice(1).map((span) => span.start),
+      protectRanges: options.protectMusic ? (inputs.musicSections ?? next.musicSections ?? []) : [],
     });
     if (plan && plan.segments.length > 0) {
       next = { ...next, segments: plan.segments };
@@ -428,6 +444,8 @@ export function applyAutoEdit(
       summary.hook = hook;
     }
   }
+
+  if (options.protectMusic && inputs.musicSections?.length) next = { ...next, musicSections: [...inputs.musicSections] };
 
   if (options.highlightKeywords && inputs.captionGroups?.length) {
     const highlighted = highlightKeywords(inputs.captionGroups);

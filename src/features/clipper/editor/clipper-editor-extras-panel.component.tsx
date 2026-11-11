@@ -15,7 +15,8 @@ function describeCorrection(c: ColorCorrection): string {
   const cast = Math.abs(c.warmth) < 0.05 ? "no colour cast" : c.warmth > 0 ? "warmed a cool cast" : "cooled a warm cast";
   return `Auto: brightness ${pct(c.brightness)}, contrast ${pct(c.contrast)}, saturation ${pct(c.saturation)}, ${cast}.`;
 }
-import type { WordCue } from "../lib/media/transcription-export.util";
+import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
+import type { MusicSection } from "./music-detect.util";
 import { hookDuration, pickHookLocally, pickHookWithAi } from "./hook.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { decodeAudioFile } from "./audio-extras.util";
@@ -31,6 +32,7 @@ import {
   DEFAULT_SOUND_EFFECTS,
   formatEditorTime,
   getOutputDuration,
+  sourceToOutputTime,
   type ClipEdit,
 } from "./clip-edit.util";
 import { saveEditorAsset } from "./editor-assets.util";
@@ -47,6 +49,9 @@ interface ExtrasPanelProps {
   onPreviewHook?: () => void;
   /** Measures the clip's colour (needs the project's source video). */
   onMeasureColor?: () => Promise<ColorCorrection | null>;
+  /** Finds songs and performances in the export's audio. */
+  onFindMusic?: () => Promise<MusicSection[]>;
+  captionGroups?: readonly CaptionGroup[];
 }
 
 const checkboxLabel: React.CSSProperties = { fontSize: 12, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" };
@@ -62,7 +67,26 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
   sourceDuration = 0,
   onPreviewHook,
   onMeasureColor,
+  onFindMusic,
+  captionGroups = [],
 }) => {
+  const [musicBusy, setMusicBusy] = useState(false);
+  const [musicNote, setMusicNote] = useState<string | null>(null);
+  const songs = edit.musicSections ?? null;
+  const findMusic = async () => {
+    if (!onFindMusic) return;
+    setMusicBusy(true);
+    setMusicNote(null);
+    try {
+      const found = await onFindMusic();
+      onChange((current) => ({ ...current, musicSections: found }));
+      setMusicNote(found.length ? null : "No songs or instrumental passages found.");
+    } catch (error) {
+      setMusicNote(error instanceof Error ? error.message : String(error));
+    } finally {
+      setMusicBusy(false);
+    }
+  };
   const { theme } = useClipperUi();
   const fileRef = useRef<HTMLInputElement>(null);
   const [musicError, setMusicError] = useState<string | null>(null);
@@ -202,6 +226,72 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
 
   return (
     <VStack align="stretch" gap={3}>
+      <Section title="Songs and performances">
+        <Text fontSize="xs" color={theme.text.muted}>
+          Parts where music is playing are never cut by Auto edit, keep their own sound (no voice clean-up), and
+          background music steps aside for them.
+        </Text>
+        <OutlinedActionButton
+          h="28px"
+          px={2}
+          fontSize="xs"
+          startIcon={musicBusy ? <Spinner size="xs" /> : <Music size={13} />}
+          disabled={musicBusy || !onFindMusic}
+          onClick={() => void findMusic()}
+        >
+          {songs ? "Find again" : "Find songs"}
+        </OutlinedActionButton>
+        {songs?.length ? (
+          <>
+            {songs.map((song, index) => (
+              <Box
+                key={`${song.start}-${index}`}
+                as="button"
+                fontSize="xs"
+                textAlign="left"
+                cursor="pointer"
+                color={clipperTheme.accentGlow}
+                onClick={() => onSeekOutput?.(sourceToOutputTime(edit.segments, song.start + 0.01))}
+              >
+                ♪ {formatEditorTime(song.start)}–{formatEditorTime(song.end)} ({Math.round(song.end - song.start)}s
+                {Math.abs(song.gain - 1) > 0.05 ? `, ${song.gain > 1 ? "+" : ""}${(20 * Math.log10(song.gain)).toFixed(1)} dB to match the talking` : ""})
+              </Box>
+            ))}
+            <label style={checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={Boolean(edit.balanceMusic)}
+                onChange={(e) => onChange((current) => ({ ...current, balanceMusic: e.target.checked }))}
+                style={{ accentColor: clipperTheme.accent }}
+              />
+              Match the songs' loudness to the talking
+            </label>
+            <OutlinedActionButton
+              h="26px"
+              px={2}
+              fontSize="xs"
+              disabled={!captionGroups.length}
+              onClick={() =>
+                onChange((current) => ({
+                  ...current,
+                  captionGroups: (current.captionGroups ?? [...captionGroups]).filter((group) => {
+                    const middle = (group.start + group.end) / 2;
+                    return !songs.some((song) => middle >= song.start && middle < song.end);
+                  }),
+                }))
+              }
+            >
+              Hide captions during songs
+            </OutlinedActionButton>
+          </>
+        ) : null}
+        {musicNote ? (
+          <Text fontSize="xs" color={theme.text.muted}>
+            {musicNote}
+          </Text>
+        ) : null}
+      </Section>
+
       <Section title="Color">
         <HStack gap={1} flexWrap="wrap">
           {(Object.keys(COLOR_STYLE_LABEL) as ColorStyle[]).map((style) => (

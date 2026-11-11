@@ -24,6 +24,7 @@ import { activeInserts, loadInsertMedia } from "./broll.util";
 import { analyzeStabilization, correctionAt } from "./stabilize.util";
 import { VoiceCleanup } from "./voice-cleanup.util";
 import { beatPulseZoom } from "./beat-sync.util";
+import { musicAmount } from "./music-detect.util";
 
 export interface RenderClipEditOptions {
   /** Stream the MP4 straight to disk. Omit to render into memory. */
@@ -292,11 +293,38 @@ export async function renderClipEdit(
             }
           }
 
+          // Performances: how much of each sample is inside a song (0..1, crossfaded at the edges).
+          let performance: Float32Array | null = null;
+          if (edit.musicSections?.length) {
+            performance = new Float32Array(frameCount);
+            for (let i = 0; i < frameCount; i++) performance[i] = musicAmount(edit.musicSections, bufferStart + i / sampleRate).amount;
+          }
           if (edit.voiceCleanup && (edit.voiceCleanup.denoise || edit.voiceCleanup.compress)) {
+            const original = performance ? planar.slice() : null;
             cleanup ??= new VoiceCleanup(edit.voiceCleanup, sampleRate);
             cleanup.process(planar, channels, frameCount);
+            // Songs keep their own sound: no gating or compression inside them.
+            if (original && performance) {
+              for (let c = 0; c < channels; c++) {
+                for (let i = 0; i < frameCount; i++) {
+                  const k = c * frameCount + i;
+                  planar[k] = planar[k]! + (original[k]! - planar[k]!) * performance[i]!;
+                }
+              }
+            }
           }
-          mixExtras?.(planar, channels, frameCount, firstOutputTime);
+          if (edit.balanceMusic && edit.musicSections?.length) {
+            for (let i = 0; i < frameCount; i++) {
+              const { amount, gain } = musicAmount(edit.musicSections, bufferStart + i / sampleRate);
+              if (amount <= 0) continue;
+              const g = 1 + (gain - 1) * amount;
+              for (let c = 0; c < channels; c++) {
+                const k = c * frameCount + i;
+                planar[k] = Math.max(-1, Math.min(1, planar[k]! * g));
+              }
+            }
+          }
+          mixExtras?.(planar, channels, frameCount, firstOutputTime, performance);
 
           // Audio stays contiguous across cuts: timestamps follow the frames already written.
           const audioSample = new AudioSample({
