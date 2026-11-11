@@ -177,3 +177,21 @@ describe("AI clip picking", () => {
     expect(user!.content).toMatch(/\[39\] w39\./);
   });
 });
+
+describe("AI social metadata", () => {
+  it("parses copy, normalises hashtags and only fills empty fields unless overwriting", async () => {
+    const { parseSocialMetadata, socialPatchFor } = await import("./ai-social-metadata.util");
+    const draft = parseSocialMetadata(
+      '```json\n{"title":"This changed everything","short_description":"One line.","description":"Two lines.","hashtags":["#podcast","money tips","podcast"]}\n```',
+    );
+    expect(draft.hashtags).toBe("#podcast #moneytips");
+    const result = { socialTitle: "Mine", socialDescription: "", socialHashtags: undefined } as never;
+    expect(socialPatchFor(result, draft, false)).toEqual({
+      socialShortDescription: "One line.",
+      socialDescription: "Two lines.",
+      socialHashtags: "#podcast #moneytips",
+    });
+    expect(socialPatchFor(result, draft, true).socialTitle).toBe("This changed everything");
+    expect(() => parseSocialMetadata('{"description":"x"}')).toThrow(/no title/);
+  });
+});

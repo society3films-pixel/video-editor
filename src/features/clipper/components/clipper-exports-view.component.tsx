@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import type { ClipperFormatResult } from "../shared/state.util";
 import type { ClipEditorBridge } from "../editor/clip-editor-source.util";
 import { ClipperExportHistoryList } from "./clipper-export-history-list.component";
+import { ClipperExportsAiTools } from "./clipper-exports-ai-tools.component";
 import { ClipperExportsScreenHeader } from "./clipper-exports-screen-header.component";
 import { openClipperExportsDir } from "../persistence/export-files.util";
 
@@ -49,6 +50,8 @@ export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
         onOpenFolder={() => void handleOpenFolder()}
         onGoToPublish={handleGoToPublish}
       />
+
+      {exportHistory.length > 0 ? <ClipperExportsAiTools exports={exportHistory} onChanged={onRefreshHistory} /> : null}
 
       <ClipperExportHistoryList
         exports={exportHistory}
