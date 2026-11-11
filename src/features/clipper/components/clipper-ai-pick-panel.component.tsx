@@ -7,6 +7,7 @@ import type { WordCue } from "../lib/media/transcription-export.util";
 import { fetchClipperClips, saveClipperClips } from "../persistence/clipper-clips-api.util";
 import { describeAiChoice, resolveAiChoice, type AiChoice } from "../editor/ai-editor/ai-choice.util";
 import { clipPicksToPayload, pickClipsWithAi, type PickedClip } from "../editor/ai-editor/ai-clip-pick.util";
+import { writeYoutubeChapters } from "../editor/chapters.util";
 
 interface ClipperAiPickPanelProps {
   projectId: string;
@@ -42,6 +43,21 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({ projectI
       .then(setChoice)
       .catch((reason: unknown) => setChoiceError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
+
+  const [chapters, setChapters] = useState<string | null>(null);
+  const [chaptering, setChaptering] = useState(false);
+  const makeChapters = async () => {
+    if (!choice) return;
+    setChaptering(true);
+    setError(null);
+    try {
+      setChapters(await writeYoutubeChapters(choice, rangeWords));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setChaptering(false);
+    }
+  };
 
   const pick = async () => {
     if (!choice) return;
@@ -126,6 +142,22 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({ projectI
             <Text fontSize="xs" color={theme.status.danger}>
               {error}
             </Text>
+          ) : null}
+          <HStack gap={2} pt={1} borderTop="1px solid" borderColor="rgba(255,255,255,0.06)">
+            <Button size="xs" variant="outline" onClick={() => void makeChapters()} disabled={!choice || chaptering || rangeWords.length < 100}>
+              {chaptering ? <Spinner size="xs" /> : null} YouTube chapters
+            </Button>
+            <Text fontSize="xs" color={theme.text.muted}>
+              Timestamps for the long video's description (from the start of the selected range).
+            </Text>
+          </HStack>
+          {chapters ? (
+            <VStack align="stretch" gap={1}>
+              <textarea readOnly value={chapters} rows={Math.min(12, chapters.split("\n").length + 1)} style={{ ...inputStyle, fontFamily: "monospace", width: "100%" }} aria-label="YouTube chapters" />
+              <Button size="xs" alignSelf="flex-start" variant="outline" onClick={() => void navigator.clipboard?.writeText(chapters)}>
+                Copy
+              </Button>
+            </VStack>
           ) : null}
           {result ? (
             <VStack align="stretch" gap={1}>

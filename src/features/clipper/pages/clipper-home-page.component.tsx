@@ -25,6 +25,7 @@ import { ClipperPublishView } from "../components/clipper-publish-view.component
 import { ClipperOwnersView } from "../components/clipper-owners-view.component";
 import { CreateClipperProjectModal } from "./create-clipper-project-modal.component";
 import { ClipperTauriGate } from "./clipper-tauri-gate.component";
+import { ClipperTranscriptSearch } from "../components/home/clipper-transcript-search.component";
 import { ClipperFirstRunSetup } from "../components/clipper-first-run-setup.component";
 import { openClipperProjectsDir } from "../persistence/project-data-files.util";
 import { ProjectsPagination } from "../components/projects-pagination.component";
@@ -176,6 +177,8 @@ export function ClipperHomePage() {
                 </OutlinedActionButton>
               </VStack>
             </HStack>
+
+            {projects.length > 0 ? <ClipperTranscriptSearch /> : null}
 
             {loading || (projects.length === 0 && !setup.loaded) ? (
               <Center py={16} flex="1">
