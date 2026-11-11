@@ -1,5 +1,11 @@
 import type { CaptionGroup } from "../lib/media/transcription-export.util";
-import { normalizeCaptionPresetId } from "../lib/captions/caption-presets.util";
+import {
+  CAPTION_ACTIVE_EFFECTS,
+  CAPTION_ENTRANCES,
+  CAPTION_FONT_FAMILIES,
+  normalizeCaptionPresetId,
+  type CaptionStyleCustom,
+} from "../lib/captions/caption-presets.util";
 import { COLOR_STYLE_LABEL } from "../engine/render/color-grade.util";
 import {
   MIN_SEGMENT_SEC,
@@ -101,6 +107,7 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
             presetId: normalizeCaptionPresetId(value.captionStyle.presetId),
             position: ["top", "center", "bottom"].includes(value.captionStyle.position) ? value.captionStyle.position : "bottom",
             size: ["extra-small", "small", "medium", "large"].includes(value.captionStyle.size) ? value.captionStyle.size : "medium",
+            ...(value.captionStyle.custom && typeof value.captionStyle.custom === "object" ? { custom: parseCaptionCustom(value.captionStyle.custom) } : {}),
           }
         : null,
     inserts: (Array.isArray(value.inserts) ? value.inserts : [])
@@ -122,6 +129,25 @@ export function fromPersistedClipEdit(raw: unknown, duration: number): Omit<Clip
       ? value.bleeps.filter((b) => b && isFiniteNumber(b.start) && isFiniteNumber(b.end) && b.end > b.start).map((b) => ({ start: b.start, end: b.end }))
       : [],
   };
+}
+
+function parseCaptionCustom(raw: Record<string, unknown>): CaptionStyleCustom {
+  const color = (v: unknown) => (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : undefined);
+  const custom: CaptionStyleCustom = {
+    fontFamily: CAPTION_FONT_FAMILIES.includes(raw.fontFamily as never) ? (raw.fontFamily as CaptionStyleCustom["fontFamily"]) : undefined,
+    fontWeight: [400, 600, 700, 800, 900].includes(raw.fontWeight as number) ? (raw.fontWeight as CaptionStyleCustom["fontWeight"]) : undefined,
+    uppercase: typeof raw.uppercase === "boolean" ? raw.uppercase : undefined,
+    textColor: color(raw.textColor),
+    activeTextColor: color(raw.activeTextColor),
+    activeColor: color(raw.activeColor),
+    outlineColor: color(raw.outlineColor),
+    outlineWidthEm: isFiniteNumber(raw.outlineWidthEm) ? Math.min(0.4, Math.max(0, raw.outlineWidthEm)) : undefined,
+    activeEffect: CAPTION_ACTIVE_EFFECTS.includes(raw.activeEffect as never) ? (raw.activeEffect as CaptionStyleCustom["activeEffect"]) : undefined,
+    entrance: CAPTION_ENTRANCES.includes(raw.entrance as never) ? (raw.entrance as CaptionStyleCustom["entrance"]) : undefined,
+    plateStyle: raw.plateStyle === "group" || raw.plateStyle === "none" ? raw.plateStyle : undefined,
+    plateColor: color(raw.plateColor),
+  };
+  return Object.fromEntries(Object.entries(custom).filter(([, v]) => v !== undefined)) as CaptionStyleCustom;
 }
 
 function parseCover(raw: unknown): ClipCover | null {

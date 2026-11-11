@@ -1,13 +1,59 @@
 import React, { useState } from "react";
-import { HStack, Spinner, Text, VStack } from "@chakra-ui/react";
+import { Box, HStack, Spinner, Text, VStack } from "@chakra-ui/react";
 import { Languages, Smile } from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import type { ClipCaptionStyle, ClipEdit } from "./clip-edit.util";
-import { CLIPPER_CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID, type ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
-import { Section, fieldStyle } from "./clipper-editor-side-panel.component";
+import {
+  CAPTION_ACTIVE_EFFECTS,
+  CAPTION_ENTRANCES,
+  CAPTION_FONT_FAMILIES,
+  CLIPPER_CAPTION_PRESETS,
+  DEFAULT_CAPTION_PRESET_ID,
+  resolveCaptionPreset,
+  type CaptionActiveEffect,
+  type CaptionEntrance,
+  type CaptionFontFamily,
+  type CaptionStyleCustom,
+  type ClipperCaptionPresetId,
+} from "../lib/captions/caption-presets.util";
+
+const EFFECT_LABEL: Partial<Record<CaptionActiveEffect, string>> = {
+  none: "plain",
+  color: "colour",
+  "gradient-pill": "pill",
+  glow: "glow",
+  pop: "pop",
+  "beast-pop": "big pop",
+  hustle: "thick outline",
+};
+const ENTRANCE_LABEL: Partial<Record<CaptionEntrance, string>> = {
+  none: "instant",
+  "page-fade": "fade",
+  "group-fade": "line fade",
+  "word-blur": "blur in",
+  "word-scale": "pop in",
+  "word-rise": "rise",
+};
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const hex = /^#[0-9a-f]{6}$/i.test(value) ? value : "#ffffff";
+  return (
+    <label style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>
+      <input
+        type="color"
+        value={hex}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label || "Colour"}
+        style={{ width: 26, height: 20, padding: 0, border: "none", background: "transparent" }}
+      />
+      {label}
+    </label>
+  );
+}
+import { Section, SliderRow, fieldStyle } from "./clipper-editor-side-panel.component";
 import {
   addEmojiAutomatically,
   clearEmoji,
@@ -64,6 +110,12 @@ export const ClipperCaptionExtras: React.FC<CaptionExtrasProps> = ({ edit, group
 
   if (!groups.length) return null;
   const style = edit.captionStyle ?? null;
+  const base = resolveCaptionPreset(style?.presetId ?? DEFAULT_CAPTION_PRESET_ID);
+  const custom: CaptionStyleCustom = style?.custom ?? {};
+  const setCustom = (patch: CaptionStyleCustom) =>
+    onChange((current) =>
+      current.captionStyle ? { ...current, captionStyle: { ...current.captionStyle, custom: { ...current.captionStyle.custom, ...patch } } } : current,
+    );
   const setStyle = (patch: Partial<ClipCaptionStyle> | null) =>
     onChange((current) => ({
       ...current,
@@ -100,8 +152,97 @@ export const ClipperCaptionExtras: React.FC<CaptionExtrasProps> = ({ edit, group
             </select>
           </HStack>
         ) : null}
+        {style ? (
+          <VStack align="stretch" gap={2} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+            <HStack justify="space-between">
+              <Text fontSize="xs" fontWeight="semibold">
+                Design
+              </Text>
+              {style.custom && Object.keys(style.custom).length ? (
+                <Box as="button" fontSize="xs" color={theme.text.muted} cursor="pointer" onClick={() => setStyle({ custom: undefined })}>
+                  Reset to the style
+                </Box>
+              ) : null}
+            </HStack>
+            <HStack gap={2}>
+              <select value={custom.fontFamily ?? base.fontFamily} onChange={(e) => setCustom({ fontFamily: e.target.value as CaptionFontFamily })} style={fieldStyle} aria-label="Font">
+                {CAPTION_FONT_FAMILIES.map((font) => (
+                  <option key={font} value={font}>
+                    {font}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={custom.fontWeight ?? base.fontWeight}
+                onChange={(e) => setCustom({ fontWeight: Number(e.target.value) as CaptionStyleCustom["fontWeight"] })}
+                style={{ ...fieldStyle, width: "auto" }}
+                aria-label="Font weight"
+              >
+                {[400, 600, 700, 800, 900].map((weight) => (
+                  <option key={weight} value={weight}>
+                    {weight === 400 ? "Regular" : weight === 600 ? "Semibold" : weight === 700 ? "Bold" : weight === 800 ? "Extra bold" : "Black"}
+                  </option>
+                ))}
+              </select>
+            </HStack>
+            <HStack gap={3} flexWrap="wrap">
+              <ColorField label="Text" value={custom.textColor ?? base.textColor} onChange={(textColor) => setCustom({ textColor })} />
+              <ColorField label="Spoken word" value={custom.activeTextColor ?? base.activeTextColor} onChange={(activeTextColor) => setCustom({ activeTextColor })} />
+              <ColorField label="Highlight" value={custom.activeColor ?? base.activeColor} onChange={(activeColor) => setCustom({ activeColor })} />
+              <ColorField label="Outline" value={custom.outlineColor ?? base.outlineColor} onChange={(outlineColor) => setCustom({ outlineColor })} />
+            </HStack>
+            <SliderRow
+              label="Outline"
+              value={custom.outlineWidthEm ?? base.outlineWidthEm}
+              min={0}
+              max={0.3}
+              step={0.01}
+              display={(custom.outlineWidthEm ?? base.outlineWidthEm).toFixed(2)}
+              onChange={(outlineWidthEm) => setCustom({ outlineWidthEm })}
+            />
+            <HStack gap={2}>
+              <select value={custom.activeEffect ?? base.activeEffect} onChange={(e) => setCustom({ activeEffect: e.target.value as CaptionActiveEffect })} style={fieldStyle} aria-label="Spoken word effect">
+                {CAPTION_ACTIVE_EFFECTS.map((effect) => (
+                  <option key={effect} value={effect}>
+                    Spoken word: {EFFECT_LABEL[effect] ?? effect}
+                  </option>
+                ))}
+              </select>
+              <select value={custom.entrance ?? base.entrance} onChange={(e) => setCustom({ entrance: e.target.value as CaptionEntrance })} style={fieldStyle} aria-label="Entrance animation">
+                {CAPTION_ENTRANCES.map((entrance) => (
+                  <option key={entrance} value={entrance}>
+                    In: {ENTRANCE_LABEL[entrance] ?? entrance}
+                  </option>
+                ))}
+              </select>
+            </HStack>
+            <HStack gap={3}>
+              <label style={checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={custom.uppercase ?? base.uppercase}
+                  onChange={(e) => setCustom({ uppercase: e.target.checked })}
+                  style={{ accentColor: clipperTheme.accent }}
+                />
+                CAPITALS
+              </label>
+              <label style={checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={(custom.plateStyle ?? base.plateStyle) === "group"}
+                  onChange={(e) => setCustom({ plateStyle: e.target.checked ? "group" : "none" })}
+                  style={{ accentColor: clipperTheme.accent }}
+                />
+                Background box
+              </label>
+              {(custom.plateStyle ?? base.plateStyle) === "group" ? (
+                <ColorField label="" value={custom.plateColor ?? base.plateColor} onChange={(plateColor) => setCustom({ plateColor })} />
+              ) : null}
+            </HStack>
+          </VStack>
+        ) : null}
         <Text fontSize="xs" color={theme.text.muted}>
-          Only this clip; the project's style stays as it is.
+          Only this clip; the project's style stays as it is. Save it as a template to reuse it.
         </Text>
       </Section>
 

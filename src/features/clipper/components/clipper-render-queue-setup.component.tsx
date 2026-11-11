@@ -1,3 +1,4 @@
+import { getClipperFormatDef } from "../shared/formats.util";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import React, { useMemo } from "react";
 import { Box, Button, Checkbox, Flex, HStack, Text, VStack } from "@chakra-ui/react";
@@ -208,6 +209,34 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
           <ExportFormatControls formats={formats} onChange={onChangeFormats} layout="bar" />
         </HStack>
       </VStack>
+
+      <HStack gap={4} flexWrap="wrap" fontSize="sm" color={theme.text.muted}>
+        <Text fontWeight="semibold" color={theme.text.primary}>
+          Captions
+        </Text>
+        {formats.enabledFormatIds.map((formatId) => {
+          const clean = formats.cleanCaptionFormatIds?.includes(formatId) ?? false;
+          return (
+            <label key={formatId} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={!clean}
+                onChange={(e) => {
+                  const current = new Set(formats.cleanCaptionFormatIds ?? []);
+                  if (e.target.checked) current.delete(formatId);
+                  else current.add(formatId);
+                  onChangeFormats({ cleanCaptionFormatIds: [...current] });
+                }}
+              />
+              Burn into {getClipperFormatDef(formatId)?.label ?? formatId}
+            </label>
+          );
+        })}
+        <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+          <input type="checkbox" checked={Boolean(formats.writeSrt)} onChange={(e) => onChangeFormats({ writeSrt: e.target.checked })} />
+          Also save an .srt file with each export
+        </label>
+      </HStack>
 
       {framingWarnings && framingWarnings.size > 0 ? (
         <HStack gap={3} p={3} borderRadius="lg" border="1px solid" borderColor={theme.status.warning} flexWrap="wrap">

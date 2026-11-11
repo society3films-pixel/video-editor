@@ -17,7 +17,7 @@ import type { StabilizeSettings } from "./stabilize.util";
 import type { VoiceCleanupSettings } from "./voice-cleanup.util";
 import type { BeatPulse } from "./beat-sync.util";
 import { isColorGradeActive, type ColorGrade } from "../engine/render/color-grade.util";
-import type { ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
+import type { CaptionStyleCustom, ClipperCaptionPresetId } from "../lib/captions/caption-presets.util";
 import type { ClipperCaptionPosition, ClipperCaptionSize } from "../settings/settings.util";
 import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
 import {
@@ -98,6 +98,8 @@ export interface ClipCaptionStyle {
   presetId: ClipperCaptionPresetId;
   position: ClipperCaptionPosition;
   size: ClipperCaptionSize;
+  /** Designer overrides on top of the preset. */
+  custom?: CaptionStyleCustom;
 }
 
 export interface ClipCover {

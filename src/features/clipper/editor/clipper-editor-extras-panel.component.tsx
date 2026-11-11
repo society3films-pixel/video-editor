@@ -20,6 +20,7 @@ import { hookDuration, pickHookLocally, pickHookWithAi } from "./hook.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { decodeAudioFile } from "./audio-extras.util";
 import { beatsOnTimeline, detectBeats } from "./beat-sync.util";
+import { addChapterCards } from "./chapters.util";
 import { describeAiChoice, resolveAiChoice } from "./ai-editor/ai-choice.util";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
@@ -71,6 +72,8 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
   const bar = edit.progressBar ?? null;
   const cover = edit.cover ?? null;
   const hook = edit.hook ?? null;
+  const [chapterBusy, setChapterBusy] = useState(false);
+  const [chapterNote, setChapterNote] = useState<string | null>(null);
   const [beatBusy, setBeatBusy] = useState(false);
   const [beatNote, setBeatNote] = useState<string | null>(null);
   const toggleBeatPulse = async (on: boolean) => {
@@ -333,6 +336,38 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
         {brollError ? (
           <Text fontSize="xs" color={theme.status.danger}>
             {brollError}
+          </Text>
+        ) : null}
+      </Section>
+
+      <Section title="Chapter cards">
+        <Text fontSize="xs" color={theme.text.muted}>
+          The AI finds where the topic or step changes and adds a short title card there (as text you can edit).
+        </Text>
+        <OutlinedActionButton
+          h="28px"
+          px={2}
+          fontSize="xs"
+          startIcon={chapterBusy ? <Spinner size="xs" /> : <Sparkles size={13} />}
+          disabled={chapterBusy || words.length < 20}
+          onClick={() => {
+            setChapterBusy(true);
+            setChapterNote(null);
+            void resolveAiChoice()
+              .then((choice) => addChapterCards(choice, edit, words))
+              .then((result) => {
+                onChange(() => result.edit);
+                setChapterNote(result.count ? `Added ${result.count} chapter card${result.count === 1 ? "" : "s"}.` : "The AI didn't find clear topic changes.");
+              })
+              .catch((error: unknown) => setChapterNote(error instanceof Error ? error.message : String(error)))
+              .finally(() => setChapterBusy(false));
+          }}
+        >
+          Add chapter cards
+        </OutlinedActionButton>
+        {chapterNote ? (
+          <Text fontSize="xs" color={theme.text.muted}>
+            {chapterNote}
           </Text>
         ) : null}
       </Section>
