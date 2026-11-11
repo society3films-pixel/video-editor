@@ -143,3 +143,37 @@ describe("Claude provider", () => {
     expect(pickDefaultClaudeModel([])).toBeNull();
   });
 });
+
+describe("AI clip picking", () => {
+  // 40 words, one per second.
+  const longWords: WordCue[] = Array.from({ length: 40 }, (_, i) => ({ text: i % 10 === 9 ? `w${i}.` : `w${i}`, start: i, end: i + 0.8 }));
+  const options = { count: 3, minSec: 8, maxSec: 15, focus: "" };
+
+  it("keeps valid, non-overlapping picks of the right length", async () => {
+    const { parseClipPicks, clipPicksToPayload } = await import("./ai-clip-pick.util");
+    const reply = JSON.stringify({
+      clips: [
+        { title: "Good one", reason: "Strong hook", segments: [{ from: 0, to: 9 }] },
+        { title: "Overlaps", segments: [{ from: 5, to: 15 }] },
+        { title: "Too short", segments: [{ from: 20, to: 21 }] },
+        { title: "Bad index", segments: [{ from: 30, to: 99 }] },
+        { title: "Supercut", segments: [{ from: 30, to: 34 }, { from: 20, to: 25 }] },
+      ],
+    });
+    const { clips, rejected } = parseClipPicks(reply, longWords, options);
+    expect(clips.map((c) => c.title)).toEqual(["Good one", "Supercut"]);
+    expect(rejected).toBe(3);
+    expect(clips[1]!.segments).toEqual([{ from: 20, to: 25 }, { from: 30, to: 34 }]);
+    const payload = clipPicksToPayload(clips, longWords, 4);
+    expect(payload[0]).toMatchObject({ index: 4, startSec: 0, endSec: 9.8, label: "Good one" });
+    expect(payload[1]!.segments[1]).toMatchObject({ orderIndex: 1, wordStartIdx: 30, wordEndIdx: 34, startSec: 30, endSec: 34.8 });
+  });
+
+  it("asks for the requested count, lengths and focus", async () => {
+    const { buildClipPickMessages } = await import("./ai-clip-pick.util");
+    const [, user] = buildClipPickMessages(longWords, { ...options, focus: "funny bits" });
+    expect(user!.content).toMatch(/up to 3 clips, each 8-15 seconds/);
+    expect(user!.content).toMatch(/Focus: funny bits/);
+    expect(user!.content).toMatch(/\[39\] w39\./);
+  });
+});

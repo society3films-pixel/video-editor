@@ -1,4 +1,5 @@
 import React, { Suspense, lazy } from "react";
+import { ClipperAiPickPanel } from "./clipper-ai-pick-panel.component";
 import { Box } from "@chakra-ui/react";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import {
@@ -129,6 +130,7 @@ export const ClipperClipsSection: React.FC<ClipperClipsSectionProps> = ({
             <ClipperAiMcpEmptyState />
           )}
 
+          <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} />
           <ClipperAiMcpPanel clipCount={listPreviews.length} projectId={projectId} />
         </Box>
       ) : (

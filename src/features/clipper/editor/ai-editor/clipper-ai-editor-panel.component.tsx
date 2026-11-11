@@ -13,6 +13,7 @@ import {
   type AiProviderStatus,
 } from "./ai-editor-providers.util";
 import { removeAnthropicKey, saveAnthropicKey, verifyAnthropicKey } from "./ai-editor-anthropic.util";
+import { loadAiChoice, saveAiChoice } from "./ai-choice.util";
 
 export interface AiEditorTurn {
   instruction: string;
@@ -74,8 +75,10 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
     void aiProviderStatuses().then((list) => {
       if (cancelled) return;
       setProviders(list);
-      // Prefer a provider that's ready; Claude is listed first so its key can be added here.
-      setProvider((list.find((item) => item.hasKey) ?? list[0])?.provider ?? null);
+      // The last choice if it's still ready; else a ready provider (Claude is listed first so its key can be added here).
+      const saved = loadAiChoice();
+      const savedReady = saved && list.some((item) => item.provider === saved.provider && item.hasKey);
+      setProvider(savedReady ? saved.provider : (list.find((item) => item.hasKey) ?? list[0])?.provider ?? null);
     });
     return () => {
       cancelled = true;
@@ -117,7 +120,9 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
         if (controller.signal.aborted) return;
         setModels(ids);
         const saved = loadSavedModel(provider);
-        setModel(saved && ids.includes(saved) ? saved : defaultModel(provider, ids) ?? "");
+        const chosen = saved && ids.includes(saved) ? saved : defaultModel(provider, ids) ?? "";
+        setModel(chosen);
+        if (chosen) saveAiChoice({ provider, model: chosen });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -179,7 +184,10 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
             value={model}
             onChange={(event) => {
               setModel(event.target.value);
-              if (provider) saveModel(provider, event.target.value);
+              if (provider) {
+                saveModel(provider, event.target.value);
+                saveAiChoice({ provider, model: event.target.value });
+              }
             }}
             style={selectStyle}
             aria-label="AI model"
