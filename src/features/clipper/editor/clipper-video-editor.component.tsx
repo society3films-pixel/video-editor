@@ -89,6 +89,7 @@ import { learnFromFraming } from "./framing-learning.util";
 import { faceCenterInOutput } from "./punch-in-center.util";
 import { detectMusicSections } from "./music-detect.util";
 import { syncAngle } from "./multicam.util";
+import { ClipperTextCutPanel } from "./clipper-text-cut-panel.component";
 
 interface ClipperVideoEditorProps {
   /**
@@ -125,7 +126,7 @@ const HISTORY_COALESCE_MS = 600;
 const HISTORY_LIMIT = 100;
 const DRAG_THRESHOLD_PX = 4;
 
-type PanelTab = "edit" | "ai" | "captions" | "framing";
+type PanelTab = "edit" | "text" | "ai" | "captions" | "framing";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -994,6 +995,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     ? [{ id: "framing", label: "Framing" }]
     : [
         { id: "edit", label: "Edit" },
+        { id: "text", label: "Text" },
         { id: "ai", label: "AI" },
         { id: "captions", label: "Captions" },
         { id: "framing", label: "Framing" },
@@ -1307,6 +1309,17 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 onFindMusic={result ? async () => detectMusicSections(await resolveSourceFile(result, projectId), autoEditWords) : undefined}
                 projectId={projectId}
                 onSyncAngle={source ? (file) => syncAngle(file, source.rangeFile, source.clip.segments) : undefined}
+              />
+            ) : tab === "text" ? (
+              <ClipperTextCutPanel
+                edit={edit}
+                words={autoEditWords}
+                currentTime={currentTime}
+                onChange={(updater) => applyEdit(updater)}
+                onSeek={(time) => {
+                  videoRef.current?.pause();
+                  seek(time);
+                }}
               />
             ) : tab === "ai" ? (
               <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />

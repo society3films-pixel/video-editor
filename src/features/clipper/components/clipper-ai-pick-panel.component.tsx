@@ -8,6 +8,7 @@ import { fetchClipperClips, saveClipperClips } from "../persistence/clipper-clip
 import { describeAiChoice, resolveAiChoice, type AiChoice } from "../editor/ai-editor/ai-choice.util";
 import { clipPicksToPayload, pickClipsWithAi, type PickedClip } from "../editor/ai-editor/ai-clip-pick.util";
 import { writeYoutubeChapters } from "../editor/chapters.util";
+import { buildPaperEdit, paperEditToClip, type PaperEdit } from "../editor/ai-editor/ai-paper-edit.util";
 
 interface ClipperAiPickPanelProps {
   projectId: string;
@@ -46,6 +47,26 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({ projectI
 
   const [chapters, setChapters] = useState<string | null>(null);
   const [chaptering, setChaptering] = useState(false);
+  const [longMinutes, setLongMinutes] = useState(12);
+  const [longBusy, setLongBusy] = useState(false);
+  const [longResult, setLongResult] = useState<PaperEdit | null>(null);
+  const makeLongForm = async () => {
+    if (!choice) return;
+    setLongBusy(true);
+    setError(null);
+    try {
+      const paper = await buildPaperEdit(choice, rangeWords, longMinutes, focus);
+      const existing = await fetchClipperClips(projectId, "ai");
+      const index = existing.reduce((max, clip) => Math.max(max, clip.index + 1), 0);
+      await saveClipperClips(projectId, "ai", [...existing, paperEditToClip(paper, index)]);
+      setLongResult(paper);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLongBusy(false);
+    }
+  };
+
   const makeChapters = async () => {
     if (!choice) return;
     setChaptering(true);
@@ -143,6 +164,30 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({ projectI
               {error}
             </Text>
           ) : null}
+          <VStack align="stretch" gap={1} pt={2} borderTop="1px solid" borderColor="rgba(255,255,255,0.06)">
+            <Text fontSize="xs" fontWeight="semibold">
+              Long-form edit
+            </Text>
+            <Text fontSize="xs" color={theme.text.muted}>
+              The AI builds a story from the whole interview (best answers in a flowing order, performances between
+              topics) and saves it as one AI clip to render in 16:9 and fine-tune.
+            </Text>
+            <HStack gap={2} flexWrap="wrap" fontSize="xs" color={theme.text.muted}>
+              <label>
+                About{" "}
+                <input type="number" min={2} max={90} value={longMinutes} onChange={(e) => setLongMinutes(Math.max(2, Math.min(90, Number(e.target.value) || 10)))} style={{ ...inputStyle, width: 56 }} /> min
+              </label>
+              <Button size="xs" variant="outline" onClick={() => void makeLongForm()} disabled={!choice || longBusy || rangeWords.length < 200}>
+                {longBusy ? <Spinner size="xs" /> : null} Build it
+              </Button>
+            </HStack>
+            {longResult ? (
+              <Text fontSize="xs" color={theme.text.muted}>
+                Saved “{longResult.title}”: {longResult.parts.length} parts, {Math.round(longResult.durationSec / 60)} min (
+                {longResult.parts.filter((p) => p.kind === "music").length} performances). It's in the AI clips list.
+              </Text>
+            ) : null}
+          </VStack>
           <HStack gap={2} pt={1} borderTop="1px solid" borderColor="rgba(255,255,255,0.06)">
             <Button size="xs" variant="outline" onClick={() => void makeChapters()} disabled={!choice || chaptering || rangeWords.length < 100}>
               {chaptering ? <Spinner size="xs" /> : null} YouTube chapters
