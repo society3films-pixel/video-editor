@@ -6,6 +6,9 @@
  * as talking. Windows are smoothed into sections of at least 4 seconds.
  */
 import { AudioBufferSink } from "mediabunny";
+import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../../../shared/utils/platform.util";
+import { getNativeFilePath } from "../platform/native-source.util";
 import { createMediabunnyInput } from "../lib/media/mediabunny-file-source.util";
 import type { WordCue } from "../lib/media/transcription-export.util";
 
@@ -22,8 +25,26 @@ const WINDOW_FRAMES = 50; // 1 s
 const MIN_SECTION_SEC = 4;
 const SILENCE_RMS = 0.004;
 
-/** RMS per 20 ms frame of the file's audio (mono mix). */
+/**
+ * RMS per 20 ms frame of the file's audio (mono mix). Files on disk are decoded natively by the
+ * desktop app (FFmpeg, much faster on long recordings); others in the webview.
+ */
 export async function frameLevels(file: File, signal?: AbortSignal): Promise<Float32Array> {
+  const path = getNativeFilePath(file);
+  if (path && isTauri()) {
+    try {
+      const levels = await invoke<number[]>("media_audio_levels", { path, frameMs: 20 });
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      return Float32Array.from(levels);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      console.warn("[audio] Native level analysis failed; decoding in the app instead:", error);
+    }
+  }
+  return frameLevelsInWebview(file, signal);
+}
+
+async function frameLevelsInWebview(file: File, signal?: AbortSignal): Promise<Float32Array> {
   const input = await createMediabunnyInput(file);
   try {
     const track = await input.getPrimaryAudioTrack();

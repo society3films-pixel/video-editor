@@ -79,7 +79,9 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
       // The last choice if it's still ready; else a ready provider (Claude is listed first so its key can be added here).
       const saved = loadAiChoice();
       const savedReady = saved && list.some((item) => item.provider === saved.provider && item.hasKey);
-      setProvider(savedReady ? saved.provider : (list.find((item) => item.hasKey) ?? list[0])?.provider ?? null);
+      // Prefer a model on this computer when one is running.
+      const localReady = list.some((item) => item.provider === "local" && item.hasKey);
+      setProvider(savedReady ? saved.provider : localReady ? "local" : (list.find((item) => item.hasKey) ?? list[0])?.provider ?? null);
     });
     return () => {
       cancelled = true;

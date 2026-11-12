@@ -7,6 +7,7 @@ import type { WordCue } from "../lib/media/transcription-export.util";
 import { getOutputDuration, type ClipEdit } from "./clip-edit.util";
 import { Section, fieldStyle } from "./clipper-editor-side-panel.component";
 import { resolveAiChoice } from "./ai-editor/ai-choice.util";
+import { pickMediaFiles } from "./pick-files.util";
 import {
   addBrollFiles,
   insertForSuggestion,
@@ -34,6 +35,14 @@ export const ClipperBrollLibrary: React.FC<{
     void loadBrollLibrary(projectId).then(setItems);
   }, [projectId]);
 
+  const addFiles = (files: File[]) => {
+    if (!files.length) return;
+    setBusy(`Adding ${files.length} shot${files.length === 1 ? "" : "s"}…`);
+    void addBrollFiles(projectId, files)
+      .then(setItems)
+      .catch((error: unknown) => setNote(error instanceof Error ? error.message : String(error)))
+      .finally(() => setBusy(null));
+  };
   const suggestions = suggestBroll(edit, words, items);
   const outputDuration = getOutputDuration(edit.segments);
 
@@ -75,7 +84,7 @@ export const ClipperBrollLibrary: React.FC<{
         }}
       />
       <HStack gap={2} flexWrap="wrap">
-        <OutlinedActionButton h="28px" px={2} fontSize="xs" startIcon={<FolderPlus size={13} />} onClick={() => fileRef.current?.click()} disabled={Boolean(busy)}>
+        <OutlinedActionButton h="28px" px={2} fontSize="xs" startIcon={<FolderPlus size={13} />} onClick={() => void pickMediaFiles("visual", true).then(addFiles)} disabled={Boolean(busy)}>
           Add shots
         </OutlinedActionButton>
         {items.length ? (

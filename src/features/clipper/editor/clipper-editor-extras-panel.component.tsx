@@ -20,6 +20,7 @@ import type { MusicSection } from "./music-detect.util";
 import { hookDuration, pickHookLocally, pickHookWithAi } from "./hook.util";
 import { loadEditorAsset } from "./editor-assets.util";
 import { decodeAudioFile } from "./audio-extras.util";
+import { pickMediaFiles } from "./pick-files.util";
 import { beatsOnTimeline, detectBeats } from "./beat-sync.util";
 import { addChapterCards } from "./chapters.util";
 import { describeAiChoice, resolveAiChoice } from "./ai-editor/ai-choice.util";
@@ -395,7 +396,7 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
             e.target.value = "";
           }}
         />
-        <OutlinedActionButton h="32px" fontSize="xs" startIcon={<Film size={14} />} onClick={() => brollRef.current?.click()}>
+        <OutlinedActionButton h="32px" fontSize="xs" startIcon={<Film size={14} />} onClick={() => void pickMediaFiles("visual").then((files) => addBroll(files[0]))}>
           Add image or video at the playhead
         </OutlinedActionButton>
         {inserts.map((insert) => (
@@ -592,7 +593,7 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
               <Text fontSize="xs" flex={1} truncate title={music.name}>
                 {music.name}
               </Text>
-              <OutlinedActionButton h="28px" px={2} fontSize="xs" onClick={() => fileRef.current?.click()}>
+              <OutlinedActionButton h="28px" px={2} fontSize="xs" onClick={() => void pickMediaFiles("audio").then((files) => pickMusic(files[0]))}>
                 Change
               </OutlinedActionButton>
               <OutlinedActionButton
@@ -686,7 +687,7 @@ export const ClipperEditorExtrasPanel: React.FC<ExtrasPanelProps> = ({
             </Text>
           </>
         ) : (
-          <OutlinedActionButton startIcon={<Music size={14} />} h="32px" fontSize="xs" onClick={() => fileRef.current?.click()} disabled={saving}>
+          <OutlinedActionButton startIcon={<Music size={14} />} h="32px" fontSize="xs" onClick={() => void pickMediaFiles("audio").then((files) => pickMusic(files[0]))} disabled={saving}>
             {saving ? "Adding…" : "Add background music"}
           </OutlinedActionButton>
         )}

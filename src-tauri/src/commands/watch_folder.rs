@@ -83,3 +83,13 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
+
+/// Sound level per `frame_ms` of a media file (RMS of a mono mix), decoded natively.
+#[tauri::command]
+pub async fn media_audio_levels(path: String, frame_ms: u32) -> Result<Vec<f32>, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::video::ffmpeg::audio_levels::audio_levels_blocking(&path, frame_ms)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

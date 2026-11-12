@@ -7,6 +7,7 @@ import { clipperTheme } from "../shared/theme.util";
 import { createEditId, type ClipEdit } from "./clip-edit.util";
 import { Section, SliderRow } from "./clipper-editor-side-panel.component";
 import { saveEditorAsset } from "./editor-assets.util";
+import { pickMediaFiles } from "./pick-files.util";
 import type { ClipAngle } from "./multicam.util";
 
 /** Extra cameras: add, sync by sound, frame, and use for songs. */
@@ -61,7 +62,7 @@ export const ClipperCameraAngles: React.FC<{
         h="30px"
         fontSize="xs"
         startIcon={busy ? <Spinner size="xs" /> : <Camera size={14} />}
-        onClick={() => fileRef.current?.click()}
+        onClick={() => void pickMediaFiles("video").then((files) => add(files[0]))}
         disabled={busy || !onSyncAngle}
       >
         {busy ? "Lining up by sound…" : "Add a camera angle"}

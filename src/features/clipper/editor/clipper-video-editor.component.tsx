@@ -77,7 +77,7 @@ import { requestEdit, type AiProvider } from "./ai-editor/ai-editor-providers.ut
 import { buildAiEditMessages } from "./ai-editor/ai-editor-prompt.util";
 import { applyAiEditPlan, parseAiEditReply } from "./ai-editor/ai-editor-ops.util";
 import { detectSpeakers, measureMainMouthActivity } from "./speaker-detect.util";
-import { loadEditorAsset } from "./editor-assets.util";
+import { loadEditorAsset, playableUrl } from "./editor-assets.util";
 import { clearKeywords, highlightKeywords, toggleWordEmphasis } from "./caption-keywords.util";
 import { checkClipFraming } from "./framing-check.util";
 import { ClipperFramingIssues } from "./clipper-framing-issues.component";
@@ -90,6 +90,8 @@ import { faceCenterInOutput } from "./punch-in-center.util";
 import { detectMusicSections } from "./music-detect.util";
 import { syncAngle } from "./multicam.util";
 import { ClipperTextCutPanel } from "./clipper-text-cut-panel.component";
+import { fromPersistedClipEdit } from "./clip-edit-persist.util";
+import { deleteDraft, draftKey, loadDraft, saveDraft, type EditorDraft } from "./editor-drafts.util";
 
 interface ClipperVideoEditorProps {
   /**
@@ -330,9 +332,10 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     if (!musicAssetId) return;
     let url: string | null = null;
     let cancelled = false;
-    void loadEditorAsset(musicAssetId).then((file) => {
+    void loadEditorAsset(musicAssetId).then(async (file) => {
       if (!file || cancelled) return;
-      url = URL.createObjectURL(file);
+      url = await playableUrl(file);
+      if (cancelled) return;
       const audio = new Audio(url);
       audio.loop = true;
       musicAudioRef.current = audio;
@@ -341,7 +344,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       cancelled = true;
       musicAudioRef.current?.pause();
       musicAudioRef.current = null;
-      if (url) URL.revokeObjectURL(url);
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
     };
   }, [musicAssetId]);
 
@@ -653,11 +656,37 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
 
   // ---- Save / close ---------------------------------------------------------------------------
 
+  // ---- Autosave ------------------------------------------------------------------------------
+  const draftKeyValue = draftKey(projectId, result?.id, source?.clip.segments);
+  const [draftOffer, setDraftOffer] = useState<EditorDraft | null>(null);
+  const draftCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!edit || draftCheckedRef.current) return;
+    draftCheckedRef.current = true;
+    void loadDraft(draftKeyValue).then((draft) => {
+      if (draft) setDraftOffer(draft);
+    });
+  }, [draftKeyValue, edit]);
+  useEffect(() => {
+    // Only once the draft offer has been answered, and only while there are unsaved changes.
+    if (!edit || !dirty || draftOffer || !draftCheckedRef.current) return;
+    const timer = setTimeout(() => void saveDraft(draftKeyValue, projectId, edit), 2000);
+    return () => clearTimeout(timer);
+  }, [dirty, draftKeyValue, draftOffer, edit, projectId]);
+  const restoreDraft = useCallback(() => {
+    const draft = draftOffer;
+    setDraftOffer(null);
+    if (!draft) return;
+    const restored = fromPersistedClipEdit(draft.edit, duration);
+    applyEdit((current) => ({ ...current, ...(restored ?? {}), framing: draft.framing ?? current.framing }));
+  }, [applyEdit, draftOffer, duration]);
+
   const requestClose = useCallback(() => {
     if (saving) return;
     if (dirty && !window.confirm("Discard your edits?")) return;
+    void deleteDraft(draftKeyValue);
     onClose();
-  }, [dirty, onClose, saving]);
+  }, [dirty, draftKeyValue, onClose, saving]);
 
   const autoEditWords = source?.clip.words ?? [];
   const autoEditFaceCache = source?.frameContext.faceCache ?? null;
@@ -888,6 +917,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         }
       }
       if (clipMode) {
+        void deleteDraft(draftKeyValue);
         appToast.success("Framing saved", "Preview, the render queue and every format now use it.");
         onSaved();
         onClose();
@@ -905,6 +935,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         needsSourceRender,
         metadataFrom: openedResult,
       });
+      void deleteDraft(draftKeyValue);
       appToast.success(
         outcome.kind === "saved" ? "Edited clip saved" : "Edited clip downloaded",
         outcome.kind === "saved"
@@ -1139,6 +1170,25 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         </HStack>
       </HStack>
 
+      {draftOffer ? (
+        <HStack gap={3} px={4} py={2} bg="rgba(255,200,0,0.12)" borderBottom="1px solid" borderColor="rgba(255,200,0,0.3)" flexWrap="wrap">
+          <Text fontSize="sm" flex={1}>
+            There are unsaved changes from {new Date(draftOffer.savedAt).toLocaleString()} (saved automatically).
+          </Text>
+          <Button size="sm" onClick={restoreDraft}>
+            Restore them
+          </Button>
+          <OutlinedActionButton
+            h="32px"
+            onClick={() => {
+              setDraftOffer(null);
+              void deleteDraft(draftKeyValue);
+            }}
+          >
+            Discard
+          </OutlinedActionButton>
+        </HStack>
+      ) : null}
       <Flex flex={1} minH={0} direction={{ base: "column", lg: "row" }}>
         <Flex flex={1} minW={0} minH={0} direction="column" p={4} gap={3}>
           <Flex flex={1} minH={0} align="center" justify="center" bg="black" borderRadius="lg" overflow="hidden" p={2}>

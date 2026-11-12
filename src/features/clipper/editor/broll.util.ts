@@ -4,7 +4,7 @@
  */
 import { VideoSampleSink, type VideoSample } from "mediabunny";
 import { createMediabunnyInput } from "../lib/media/mediabunny-file-source.util";
-import { loadEditorAsset } from "./editor-assets.util";
+import { assetBlob, loadEditorAsset, playableUrl } from "./editor-assets.util";
 
 export type ClipInsertLayout = "top" | "full" | "pip";
 
@@ -86,7 +86,7 @@ interface LoadedMedia {
 }
 
 async function loadImage(file: File): Promise<LoadedMedia> {
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(await assetBlob(file));
   return { frame: () => ({ media: bitmap, width: bitmap.width, height: bitmap.height }), advance: async () => {}, dispose: () => bitmap.close() };
 }
 
@@ -169,9 +169,9 @@ function startPreviewLoad(insert: ClipInsert, onReady: () => void): void {
     .then(async (file) => {
       if (!file) throw new Error("missing");
       if (insert.kind === "image") {
-        previewCache.set(insert.assetId, { state: "image", bitmap: await createImageBitmap(file) });
+        previewCache.set(insert.assetId, { state: "image", bitmap: await createImageBitmap(await assetBlob(file)) });
       } else {
-        const url = URL.createObjectURL(file);
+        const url = await playableUrl(file);
         const video = document.createElement("video");
         video.src = url;
         video.muted = true;

@@ -9,7 +9,7 @@ import { createMediabunnyInput } from "../lib/media/mediabunny-file-source.util"
 import type { WordCue } from "../lib/media/transcription-export.util";
 import type { AiChoice } from "./ai-editor/ai-choice.util";
 import { requestEdit } from "./ai-editor/ai-editor-providers.util";
-import { loadEditorAsset, saveEditorAsset } from "./editor-assets.util";
+import { assetBlob, loadEditorAsset, saveEditorAsset } from "./editor-assets.util";
 import { createEditId, sourceToOutputTime, type ClipEdit } from "./clip-edit.util";
 import type { ClipInsert } from "./broll.util";
 
@@ -56,7 +56,7 @@ async function thumbnail(file: File, kind: BrollItem["kind"]): Promise<{ dataUrl
   let width = 0;
   let height = 0;
   if (kind === "image") {
-    const bitmap = await createImageBitmap(file);
+    const bitmap = await createImageBitmap(await assetBlob(file));
     width = bitmap.width;
     height = bitmap.height;
     const scale = Math.min(320 / width, 180 / height);

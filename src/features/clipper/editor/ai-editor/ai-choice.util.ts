@@ -29,13 +29,16 @@ export function saveAiChoice(choice: AiChoice): void {
   }
 }
 
-/** The saved choice if its provider still has a key, otherwise the first ready provider's default model. */
+/**
+ * The saved choice if its provider is still ready; otherwise a model on this computer when one is
+ * running (free, private, offline), then the first ready cloud provider.
+ */
 export async function resolveAiChoice(): Promise<AiChoice> {
   const statuses = await aiProviderStatuses();
   const ready = statuses.filter((status) => status.hasKey).map((status) => status.provider);
   const saved = loadAiChoice();
   if (saved && ready.includes(saved.provider)) return saved;
-  const provider = ready[0];
+  const provider = ready.includes("local") ? "local" : ready[0];
   if (!provider) {
     throw new Error("No AI is set up yet. Open a clip's editor, go to the AI tab and add an Anthropic (Claude) key or connect a local model (Ollama / LM Studio).");
   }
