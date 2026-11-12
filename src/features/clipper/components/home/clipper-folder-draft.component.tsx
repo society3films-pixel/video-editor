@@ -1,14 +1,21 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { HStack, Spinner, Text, VStack } from "@chakra-ui/react";
-import { FolderInput } from "lucide-react";
+import { ArrowDown, ArrowUp, FolderInput, X } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { OutlinedActionButton } from "../../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../../shared/use-clipper-ui.hook";
 import { useAuth } from "../../../../shared/hooks/use-auth.hook";
-import { openClipperProjectsDir } from "../../persistence/project-data-files.util";
+import { openClipperExportsDir, revealClipperExportInFolder } from "../../persistence/export-files-open.util";
+import { camerasForPart } from "../../editor/folder-draft/folder-draft.util";
 import {
+  draftMaster,
+  draftTimeline,
+  exportFolderDraft,
+  loadLastFolderDraft,
+  renderFolderDraft,
   runFolderDraft,
-  type FolderDraftResult,
+  saveFolderDraft,
+  type FolderDraft,
 } from "../../editor/folder-draft/folder-draft-run.util";
 
 const ROLE_LABEL = {
@@ -27,19 +34,50 @@ function time(sec: number): string {
     : `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** Home → Folder to draft: a shoot folder in, a synced multicam draft timeline out. */
+const field: React.CSSProperties = {
+  background: "rgba(0,0,0,0.35)",
+  color: "inherit",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 6,
+  padding: "4px 8px",
+  fontSize: 13,
+};
+
+const iconButton: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  color: "inherit",
+  cursor: "pointer",
+  padding: 2,
+  opacity: 0.75,
+};
+
+/** Home → Folder to draft: a shoot folder in, a synced multicam draft out (timeline or MP4). */
 export const ClipperFolderDraft: React.FC = () => {
   const { theme } = useClipperUi();
   const { token } = useAuth();
   const [dir, setDir] = useState<string | null>(null);
   const [minutes, setMinutes] = useState(15);
   const [focus, setFocus] = useState("");
-  const [progress, setProgress] = useState<{
-    step: string;
-    ratio: number;
+  const [busy, setBusy] = useState<{ step: string; ratio: number } | null>(
+    null,
+  );
+  const [draft, setDraft] = useState<FolderDraft | null>(null);
+  const [written, setWritten] = useState<{
+    files: string[];
+    folder: string;
+    stale: boolean;
   } | null>(null);
-  const [result, setResult] = useState<FolderDraftResult | null>(null);
+  const [rendered, setRendered] = useState<string | null>(null);
+  const [captions, setCaptions] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const abort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    void loadLastFolderDraft().then((last) => {
+      if (last) setDraft((current) => current ?? last);
+    });
+  }, []);
 
   const choose = async () => {
     const picked = await open({
@@ -49,39 +87,101 @@ export const ClipperFolderDraft: React.FC = () => {
     });
     if (typeof picked === "string") {
       setDir(picked);
-      setResult(null);
       setError(null);
     }
   };
 
-  const build = async () => {
-    if (!dir) return;
+  const run = async (task: (signal: AbortSignal) => Promise<void>) => {
     setError(null);
-    setResult(null);
-    setProgress({ step: "Starting", ratio: 0 });
+    abort.current = new AbortController();
+    setBusy({ step: "Starting", ratio: 0 });
     try {
-      setResult(
-        await runFolderDraft(dir, {
-          targetMinutes: minutes,
-          focus,
-          token: token ?? "",
-          onProgress: (step, ratio) => setProgress({ step, ratio }),
-        }),
-      );
+      await task(abort.current.signal);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (!abort.current.signal.aborted)
+        setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setProgress(null);
+      setBusy(null);
+      abort.current = null;
     }
   };
 
-  const field: React.CSSProperties = {
-    background: "rgba(0,0,0,0.35)",
-    color: "inherit",
-    border: "1px solid rgba(255,255,255,0.12)",
-    borderRadius: 6,
-    padding: "4px 8px",
-    fontSize: 13,
+  const build = () =>
+    run(async (signal) => {
+      if (!dir) return;
+      const result = await runFolderDraft(dir, {
+        targetMinutes: minutes,
+        focus,
+        token: token ?? "",
+        signal,
+        onProgress: (step, ratio) => setBusy({ step, ratio }),
+      });
+      setDraft(result.draft);
+      setWritten({ files: result.files, folder: result.folder, stale: false });
+      setRendered(null);
+    });
+
+  const change = (next: FolderDraft) => {
+    setDraft(next);
+    setWritten((w) => (w ? { ...w, stale: true } : w));
+    void saveFolderDraft(next);
+  };
+
+  const exportFiles = () =>
+    run(async () => {
+      if (!draft) return;
+      setBusy({ step: "Writing the timeline", ratio: 0.5 });
+      const result = await exportFolderDraft(draft);
+      setWritten({ files: result.files, folder: result.folder, stale: false });
+    });
+
+  const render = () =>
+    run(async (signal) => {
+      if (!draft) return;
+      const path = await renderFolderDraft(draft, {
+        captions,
+        signal,
+        onProgress: (ratio) => setBusy({ step: "Rendering the MP4", ratio }),
+      });
+      setRendered(path);
+    });
+
+  const timeline = draft ? draftTimeline(draft) : null;
+  const master = draft ? draftMaster(draft) : null;
+  const parts = draft?.story.parts ?? [];
+  const move = (index: number, by: number) => {
+    if (!draft) return;
+    const next = [...parts];
+    const [part] = next.splice(index, 1);
+    next.splice(index + by, 0, part!);
+    // Hand-picked cameras follow their part.
+    const cameraFor: Record<number, string> = {};
+    for (const [k, v] of Object.entries(draft.cameraFor)) {
+      const i = Number(k);
+      const j = i === index ? index + by : i === index + by ? index : i;
+      cameraFor[j] = v;
+    }
+    change({ ...draft, story: { ...draft.story, parts: next }, cameraFor });
+  };
+  const remove = (index: number) => {
+    if (!draft) return;
+    const cameraFor: Record<number, string> = {};
+    for (const [k, v] of Object.entries(draft.cameraFor)) {
+      const i = Number(k);
+      if (i !== index) cameraFor[i > index ? i - 1 : i] = v;
+    }
+    change({
+      ...draft,
+      story: { ...draft.story, parts: parts.filter((_, i) => i !== index) },
+      cameraFor,
+    });
+  };
+  const pickCamera = (index: number, path: string) => {
+    if (!draft) return;
+    const cameraFor = { ...draft.cameraFor };
+    if (path) cameraFor[index] = path;
+    else delete cameraFor[index];
+    change({ ...draft, cameraFor });
   };
 
   return (
@@ -104,7 +204,7 @@ export const ClipperFolderDraft: React.FC = () => {
           fontSize="xs"
           startIcon={<FolderInput size={14} />}
           onClick={() => void choose()}
-          disabled={Boolean(progress)}
+          disabled={Boolean(busy)}
         >
           {dir ? "Change folder" : "Choose a shoot folder"}
         </OutlinedActionButton>
@@ -121,11 +221,11 @@ export const ClipperFolderDraft: React.FC = () => {
         ) : null}
       </HStack>
       <Text fontSize="xs" color={theme.text.muted}>
-        Put every file from a shoot in one folder (interview cameras, a separate
-        sound recorder, performance takes, B-roll). The app sorts them, lines
-        them up by sound, transcribes the interview, has your AI build a story,
-        and writes an editable multicam timeline for Premiere or DaVinci
-        Resolve. Runs on this computer.
+        Put every file from a shoot in one folder: interview cameras, the sound
+        recorder&apos;s files, performance takes, B-roll. The app sorts them,
+        lines them up by sound, transcribes the recorder, has your AI build a
+        story, and gives you a multicam timeline to finish in Premiere or
+        DaVinci Resolve, or a video rendered here. Runs on this computer.
       </Text>
       {dir ? (
         <HStack gap={3} flexWrap="wrap" fontSize="xs">
@@ -157,23 +257,34 @@ export const ClipperFolderDraft: React.FC = () => {
             px={3}
             fontSize="xs"
             onClick={() => void build()}
-            disabled={Boolean(progress)}
+            disabled={Boolean(busy)}
           >
-            {progress ? <Spinner size="xs" /> : null} Build the draft
+            Build the draft
           </OutlinedActionButton>
         </HStack>
       ) : null}
-      {progress ? (
-        <Text fontSize="xs" color={theme.text.muted}>
-          {Math.round(progress.ratio * 100)}% · {progress.step}…
-        </Text>
+      {busy ? (
+        <HStack gap={2} fontSize="xs" color={theme.text.muted}>
+          <Spinner size="xs" />
+          <Text>
+            {Math.round(busy.ratio * 100)}% · {busy.step}…
+          </Text>
+          <OutlinedActionButton
+            h="24px"
+            px={2}
+            fontSize="xs"
+            onClick={() => abort.current?.abort()}
+          >
+            Stop
+          </OutlinedActionButton>
+        </HStack>
       ) : null}
       {error ? (
         <Text fontSize="xs" color={theme.status.danger}>
           {error}
         </Text>
       ) : null}
-      {result ? (
+      {draft && timeline && master ? (
         <VStack
           align="stretch"
           gap={2}
@@ -182,27 +293,156 @@ export const ClipperFolderDraft: React.FC = () => {
           bg="rgba(0,0,0,0.2)"
         >
           <Text fontSize="sm" fontWeight="semibold">
-            Draft ready: {time(result.timeline.durationSec)},{" "}
-            {result.story.parts.length} parts ({result.ai})
+            {draft.name}: {time(timeline.durationSec)}, {parts.length} parts (
+            {draft.ai})
+          </Text>
+
+          <Text fontSize="xs" fontWeight="semibold">
+            Finish in Premiere or Resolve
           </Text>
           <Text fontSize="xs" color={theme.text.muted}>
-            Saved {result.files.join(" and ")} in {result.folder}. Premiere:
-            File → Import the .xml. DaVinci Resolve: File → Import → Timeline.
-            The .srt is the talking, for captions.
+            {written
+              ? `${written.files.join(" and ")} in ${written.folder}${written.stale ? " (changed since; update them)" : ""}. `
+              : ""}
+            Premiere: File → Import the .xml. DaVinci Resolve: File → Import →
+            Timeline. Track V1 is the camera cuts, V2 the B-roll, A1 the
+            recorder, A2 each camera&apos;s own sound (muted, for checking
+            sync); markers name the parts.
           </Text>
-          <OutlinedActionButton
-            h="28px"
-            px={2}
-            fontSize="xs"
-            alignSelf="flex-start"
-            onClick={() => void openClipperProjectsDir()}
-          >
-            Open the project folders
-          </OutlinedActionButton>
+          <HStack gap={2} flexWrap="wrap">
+            <OutlinedActionButton
+              h="28px"
+              px={2}
+              fontSize="xs"
+              onClick={() => void exportFiles()}
+              disabled={Boolean(busy)}
+            >
+              {written
+                ? "Update the timeline files"
+                : "Write the timeline files"}
+            </OutlinedActionButton>
+            <OutlinedActionButton
+              h="28px"
+              px={2}
+              fontSize="xs"
+              onClick={() => void openClipperExportsDir(draft.projectId)}
+            >
+              Open the folder
+            </OutlinedActionButton>
+          </HStack>
+
+          <Text fontSize="xs" fontWeight="semibold" mt={1}>
+            Or finish here
+          </Text>
+          <HStack gap={3} flexWrap="wrap" fontSize="xs">
+            <label>
+              <input
+                type="checkbox"
+                checked={!draft.noBroll}
+                onChange={(e) =>
+                  change({ ...draft, noBroll: !e.target.checked })
+                }
+              />{" "}
+              B-roll ({timeline.broll.length})
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={captions}
+                onChange={(e) => setCaptions(e.target.checked)}
+              />{" "}
+              Burn in captions
+            </label>
+            <OutlinedActionButton
+              h="28px"
+              px={2}
+              fontSize="xs"
+              onClick={() => void render()}
+              disabled={Boolean(busy)}
+            >
+              Render the MP4
+            </OutlinedActionButton>
+            {rendered ? (
+              <OutlinedActionButton
+                h="28px"
+                px={2}
+                fontSize="xs"
+                onClick={() =>
+                  void revealClipperExportInFolder(
+                    draft.projectId,
+                    rendered.split(/[\\/]/).pop() ?? rendered,
+                  )
+                }
+              >
+                Show the MP4
+              </OutlinedActionButton>
+            ) : null}
+          </HStack>
+
+          <Text fontSize="xs" fontWeight="semibold" mt={1}>
+            Story (reorder, remove, or pick the camera; both outputs follow)
+          </Text>
+          {parts.map((part, index) => {
+            const cameras = camerasForPart(draft.items, part);
+            return (
+              <HStack
+                key={`${part.title}-${part.startSec}-${index}`}
+                gap={2}
+                fontSize="xs"
+                color={theme.text.muted}
+              >
+                <Text minW="18px">{index + 1}.</Text>
+                <Text flex={1} truncate title={part.title}>
+                  {part.kind === "talk" ? "💬" : "♪"} {part.title} (
+                  {time(part.endSec - part.startSec)})
+                </Text>
+                {cameras.length > 1 ? (
+                  <select
+                    value={draft.cameraFor[index] ?? ""}
+                    onChange={(e) => pickCamera(index, e.target.value)}
+                    style={{ ...field, padding: "2px 4px", fontSize: 12 }}
+                    aria-label="Camera"
+                  >
+                    <option value="">Auto camera</option>
+                    {cameras.map((camera) => (
+                      <option key={camera.path} value={camera.path}>
+                        {camera.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <button
+                  type="button"
+                  style={iconButton}
+                  onClick={() => index > 0 && move(index, -1)}
+                  aria-label="Move up"
+                >
+                  <ArrowUp size={13} />
+                </button>
+                <button
+                  type="button"
+                  style={iconButton}
+                  onClick={() => index < parts.length - 1 && move(index, 1)}
+                  aria-label="Move down"
+                >
+                  <ArrowDown size={13} />
+                </button>
+                <button
+                  type="button"
+                  style={iconButton}
+                  onClick={() => remove(index)}
+                  aria-label="Remove"
+                >
+                  <X size={13} />
+                </button>
+              </HStack>
+            );
+          })}
+
           <Text fontSize="xs" fontWeight="semibold" mt={1}>
             Files
           </Text>
-          {result.items.map((item) => (
+          {draft.items.map((item) => (
             <Text
               key={item.path}
               fontSize="xs"
@@ -212,24 +452,17 @@ export const ClipperFolderDraft: React.FC = () => {
                   : theme.text.muted
               }
             >
-              {item === result.master ? "★ " : ""}
+              {item === master ? "★ " : ""}
               {item.name}: {ROLE_LABEL[item.role]}, {time(item.durationSec)}
-              {item === result.master
+              {item === master
                 ? " (master sound)"
                 : item.offsetSec !== null
-                  ? `, lined up at ${time(item.offsetSec)} (${Math.round(item.syncScore * 100)}% match)`
+                  ? `, lined up at ${item.offsetSec < 0 ? "-" : ""}${time(Math.abs(item.offsetSec))} (${Math.round(item.syncScore * 100)}% match)`
                   : item.role === "broll"
                     ? ""
-                    : ", couldn't be lined up"}
-            </Text>
-          ))}
-          <Text fontSize="xs" fontWeight="semibold" mt={1}>
-            Story
-          </Text>
-          {result.story.parts.map((part, index) => (
-            <Text key={index} fontSize="xs" color={theme.text.muted}>
-              {index + 1}. {part.kind === "talk" ? "💬" : "♪"} {part.title} (
-              {time(part.endSec - part.startSec)})
+                    : item.role === "performance"
+                      ? ", separate take (placed whole)"
+                      : ", couldn't be lined up"}
             </Text>
           ))}
         </VStack>

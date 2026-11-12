@@ -45,13 +45,17 @@ export function buildFolderDraftXml(
     return `<file id="${id}"><name>${escapeXml(media.name)}</name><pathurl>${escapeXml(pathUrl(media.path))}</pathurl>${rateXml}<duration>${frames(media.durationSec)}</duration><media>${video}${audio}</media></file>`;
   };
   let counter = 0;
-  const item = (clip: TimelineClip, kind: "video" | "audio") => {
+  const item = (
+    clip: TimelineClip,
+    kind: "video" | "audio",
+    enabled = true,
+  ) => {
     counter++;
     const start = frames(clip.startSec);
     const inFrame = Math.max(0, frames(clip.inSec));
     const length = Math.max(1, frames(clip.outSec) - inFrame);
     return (
-      `<clipitem id="clipitem-${counter}"><name>${escapeXml(clip.label || clip.media.name)}</name><enabled>TRUE</enabled><duration>${frames(clip.media.durationSec)}</duration>${rateXml}` +
+      `<clipitem id="clipitem-${counter}"><name>${escapeXml(clip.label || clip.media.name)}</name><enabled>${enabled ? "TRUE" : "FALSE"}</enabled><duration>${frames(clip.media.durationSec)}</duration>${rateXml}` +
       `<start>${start}</start><end>${start + length}</end><in>${inFrame}</in><out>${inFrame + length}</out>${fileXml(clip.media)}` +
       (kind === "audio"
         ? `<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>`
@@ -59,22 +63,31 @@ export function buildFolderDraftXml(
       `</clipitem>`
     );
   };
-  const track = (clips: TimelineClip[], kind: "video" | "audio") =>
-    `<track>${clips.map((c) => item(c, kind)).join("")}</track>`;
+  const track = (
+    clips: TimelineClip[],
+    kind: "video" | "audio",
+    enabled = true,
+  ) => `<track>${clips.map((c) => item(c, kind, enabled)).join("")}</track>`;
+  const markers = timeline.markers
+    .map(
+      (m) =>
+        `<marker><name>${escapeXml(m.title)}</name><comment></comment><in>${frames(m.startSec)}</in><out>-1</out></marker>`,
+    )
+    .join("");
   return (
-    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="4"><sequence id="sequence-1"><name>${escapeXml(name)}</name><duration>${frames(timeline.durationSec)}</duration>${rateXml}` +
+    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="4"><sequence id="sequence-1"><name>${escapeXml(name)}</name><duration>${frames(timeline.durationSec)}</duration>${rateXml}${markers}` +
     `<media><video><format><samplecharacteristics>${rateXml}<width>${sequence.width}</width><height>${sequence.height}</height><pixelaspectratio>square</pixelaspectratio></samplecharacteristics></format>` +
     `${track(timeline.video, "video")}${timeline.broll.length ? track(timeline.broll, "video") : ""}</video>` +
-    `<audio>${track(timeline.audio, "audio")}</audio></media></sequence></xmeml>\n`
+    `<audio>${track(timeline.audio, "audio")}${timeline.scratch.length ? track(timeline.scratch, "audio", false) : ""}</audio></media></sequence></xmeml>\n`
   );
 }
 
-/** What's said in each talking part, on the draft timeline's clock. */
-export function buildFolderDraftSrt(
+/** What's said in each talking part as caption lines, on the draft timeline's clock. */
+export function draftCaptions(
   story: PaperEdit,
   words: readonly WordCue[],
-): string {
-  const entries: string[] = [];
+): Array<{ start: number; end: number; text: string }> {
+  const lines: Array<{ start: number; end: number; text: string }> = [];
   let cursor = 0;
   for (const part of story.parts) {
     if (part.kind === "talk") {
@@ -88,12 +101,26 @@ export function buildFolderDraftSrt(
         const line = partWords.slice(i, i + 7);
         const start = cursor + line[0]!.start - part.startSec;
         const end = cursor + line[line.length - 1]!.end - part.startSec;
-        entries.push(
-          `${entries.length + 1}\n${srtTimestamp(start)} --> ${srtTimestamp(Math.max(start + 0.3, end))}\n${line.map((w) => w.text).join(" ")}\n`,
-        );
+        lines.push({
+          start,
+          end: Math.max(start + 0.3, end),
+          text: line.map((w) => w.text).join(" "),
+        });
       }
     }
     cursor += part.endSec - part.startSec;
   }
-  return entries.join("\n");
+  return lines;
+}
+
+export function buildFolderDraftSrt(
+  story: PaperEdit,
+  words: readonly WordCue[],
+): string {
+  return draftCaptions(story, words)
+    .map(
+      (c, i) =>
+        `${i + 1}\n${srtTimestamp(c.start)} --> ${srtTimestamp(c.end)}\n${c.text}\n`,
+    )
+    .join("\n");
 }

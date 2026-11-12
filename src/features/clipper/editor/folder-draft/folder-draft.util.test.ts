@@ -11,6 +11,7 @@ import {
   assembleTimeline,
   chooseMaster,
   classifyMedia,
+  mergeWords,
   type FolderMedia,
 } from "./folder-draft.util";
 import { buildFolderDraftXml } from "./folder-draft-export.util";
@@ -166,6 +167,9 @@ describe("folder draft", () => {
       "song.mp4",
       "zoom.wav",
     ]);
+    // Camera sound goes on a muted scratch track; one marker per part.
+    expect(t.scratch.map((c) => c.media.name)).toEqual(["A.mp4", "B.mp4"]);
+    expect(t.markers.map((m) => m.startSec)).toEqual([0, 30, 210]);
     expect(t.broll).toHaveLength(1);
     expect(t.broll[0]!.media.name).toBe("guitar_closeup.mp4");
     expect(t.broll[0]!.startSec).toBeCloseTo(210 + 5.3 - 0.2, 5);
@@ -188,7 +192,66 @@ describe("folder draft", () => {
     }
     expect(stack).toEqual([]);
     expect(xml.match(/<clipitem/g)).toHaveLength(
-      t.video.length + t.broll.length + t.audio.length,
+      t.video.length + t.broll.length + t.audio.length + t.scratch.length,
     );
+  });
+
+  it("uses whichever recorder file covers a part, and the camera's sound where none does", () => {
+    const rec1 = media({
+      name: "ZOOM0001.wav",
+      hasVideo: false,
+      role: "recorder",
+      durationSec: 600,
+      offsetSec: 0,
+    });
+    const rec2 = media({
+      name: "ZOOM0002.wav",
+      hasVideo: false,
+      role: "recorder",
+      durationSec: 600,
+      offsetSec: 600,
+    });
+    const cam = media({ name: "A.mp4", durationSec: 1500, offsetSec: -30 });
+    const part = (startSec: number, endSec: number) => ({
+      title: "p",
+      startSec,
+      endSec,
+      wordStartIdx: 0,
+      wordEndIdx: 0,
+      kind: "talk" as const,
+    });
+    const story: PaperEdit = {
+      title: "t",
+      durationSec: 0,
+      parts: [part(100, 120), part(700, 720), part(1300, 1320)],
+    };
+    const t = assembleTimeline(story, [rec1, rec2, cam], rec1, [], new Map(), {
+      noBroll: true,
+    });
+    expect(t.audio.map((c) => c.media.name)).toEqual([
+      "ZOOM0001.wav",
+      "ZOOM0002.wav",
+      "A.mp4",
+    ]);
+    expect(t.audio[1]).toMatchObject({ inSec: 100, outSec: 120 });
+    expect(t.audio[2]).toMatchObject({ inSec: 1330, outSec: 1350 });
+  });
+
+  it("merges transcripts of split recordings on one clock", () => {
+    const w = (text: string, start: number) => ({
+      text,
+      start,
+      end: start + 0.5,
+    });
+    const words = mergeWords([
+      { offsetSec: 0, words: [w("a", 1), w("b", 590)] },
+      { offsetSec: 600, words: [w("c", 1), w("d", 5)] },
+    ]);
+    expect(words.map((x) => [x.text, x.start])).toEqual([
+      ["a", 1],
+      ["b", 590],
+      ["c", 601],
+      ["d", 605],
+    ]);
   });
 });

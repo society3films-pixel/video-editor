@@ -181,22 +181,49 @@ export async function analyzeShoot(
   if (!master) return { items, master: null };
   master.offsetSec = 0;
   master.syncScore = 1;
-  const masterEnvelope = envelopes.get(master.path)!;
   const step = 0.04; // envelope frames (see multicam.util)
-  const others = items.filter((m) => m !== master && envelopes.has(m.path));
-  for (const [index, item] of others.entries()) {
-    onProgress(`Lining up ${item.name}`, index / Math.max(1, others.length));
-    const envelope = envelopes.get(item.path)!;
-    // Up to two minutes from a tenth of the way in (past any slate or silence at the start).
-    const from = Math.floor(envelope.length * 0.1);
-    const length = Math.min(Math.round(120 / step), envelope.length - from);
-    if (length < 150) continue;
-    const { lag, score } = bestLag(
-      envelope.slice(from, from + length),
-      masterEnvelope,
-    );
-    item.syncScore = Math.max(0, score);
-    if (score >= MIN_SYNC_SCORE) item.offsetSec = lag * step - from * step;
+  // Each file is lined up against something already lined up: first the master, then any other
+  // synced file. That way a recorder that split a long take into several files still lines up
+  // through a camera that ran across the split, and a second camera through the first.
+  const pending = items.filter((m) => m !== master && envelopes.has(m.path));
+  const synced: FolderMedia[] = [master];
+  const total = pending.length;
+  let progressed = true;
+  while (pending.length && progressed) {
+    progressed = false;
+    for (const item of [...pending]) {
+      onProgress(
+        `Lining up ${item.name}`,
+        (total - pending.length) / Math.max(1, total),
+      );
+      const envelope = envelopes.get(item.path)!;
+      // Up to two minutes from a tenth of the way in (past any slate or silence at the start).
+      const from = Math.floor(envelope.length * 0.1);
+      const length = Math.min(Math.round(120 / step), envelope.length - from);
+      if (length < 150) {
+        pending.splice(pending.indexOf(item), 1);
+        continue;
+      }
+      let best: { offset: number; score: number } | null = null;
+      for (const reference of synced) {
+        const { lag, score } = bestLag(
+          envelope.slice(from, from + length),
+          envelopes.get(reference.path)!,
+        );
+        if (!best || score > best.score)
+          best = {
+            offset: reference.offsetSec! + lag * step - from * step,
+            score,
+          };
+      }
+      item.syncScore = Math.max(item.syncScore, best?.score ?? 0);
+      if (best && best.score >= MIN_SYNC_SCORE) {
+        item.offsetSec = best.offset;
+        synced.push(item);
+        pending.splice(pending.indexOf(item), 1);
+        progressed = true;
+      }
+    }
   }
   return { items, master };
 }
@@ -217,7 +244,39 @@ export interface DraftTimeline {
   video: TimelineClip[];
   broll: TimelineClip[];
   audio: TimelineClip[];
+  /** Each camera's own sound under its picture (muted in the timeline; for checking sync). */
+  scratch: TimelineClip[];
+  /** Where each story part starts on the timeline. */
+  markers: Array<{ startSec: number; title: string }>;
   durationSec: number;
+}
+
+export interface AssembleOptions {
+  /** Camera picked by hand per story part (part index → file path). */
+  cameraFor?: ReadonlyMap<number, string>;
+  /** No B-roll track. */
+  noBroll?: boolean;
+}
+
+/** Synced files with sound that cover master time [a, b]: recorders first, then the given camera. */
+function soundFor(
+  items: readonly FolderMedia[],
+  master: FolderMedia,
+  camera: FolderMedia | null,
+  a: number,
+  b: number,
+): FolderMedia | null {
+  const covers = (m: FolderMedia) =>
+    m.hasAudio &&
+    m.offsetSec !== null &&
+    m.offsetSec <= a + 0.05 &&
+    m.offsetSec + m.durationSec >= b - 0.05;
+  const recorders = items.filter((m) => m.role === "recorder" && covers(m));
+  if (covers(master) && (master.role === "recorder" || !recorders.length))
+    return master;
+  if (recorders.length) return recorders[0]!;
+  if (camera && covers(camera)) return camera;
+  return items.find((m) => m.hasVideo && covers(m)) ?? null;
 }
 
 /** Cameras that cover master time [a, b] completely. */
@@ -255,14 +314,18 @@ export function assembleTimeline(
   master: FolderMedia,
   words: readonly WordCue[],
   performances: ReadonlyMap<string, FolderMedia>,
+  options: AssembleOptions = {},
 ): DraftTimeline {
   const video: TimelineClip[] = [];
   const audio: TimelineClip[] = [];
+  const scratch: TimelineClip[] = [];
+  const markers: DraftTimeline["markers"] = [];
   const talkSpans: Array<{ start: number; end: number; a: number; b: number }> =
     [];
   let cursor = 0;
   let talkIndex = 0;
-  for (const part of story.parts) {
+  for (const [partIndex, part] of story.parts.entries()) {
+    markers.push({ startSec: cursor, title: part.title });
     if (part.kind === "performance") {
       const take = part.performanceId
         ? performances.get(part.performanceId)
@@ -299,11 +362,19 @@ export function assembleTimeline(
     const cameras = preferred.length
       ? preferred
       : camerasCovering(items, a, b, ["talk", "performance", "broll"]);
-    const camera = cameras.length
-      ? cameras[(isSong ? 0 : talkIndex++) % cameras.length]!
-      : master.hasVideo
-        ? master
-        : null;
+    const picked = options.cameraFor?.get(partIndex);
+    const pickedCamera = picked
+      ? camerasCovering(items, a, b, ["talk", "performance", "broll"]).find(
+          (m) => m.path === picked,
+        )
+      : undefined;
+    const camera =
+      pickedCamera ??
+      (cameras.length
+        ? cameras[(isSong ? 0 : talkIndex++) % cameras.length]!
+        : master.hasVideo
+          ? master
+          : null);
     if (camera)
       video.push({
         media: camera,
@@ -312,13 +383,21 @@ export function assembleTimeline(
         startSec: cursor,
         label: part.title,
       });
-    // Sound: the master (a recorder is usually the best sound) when it covers the part.
-    const sound = master.hasAudio ? master : camera;
+    // Sound: a separate recorder when one covers the part, else the camera's own.
+    const sound = soundFor(items, master, camera, a, b);
     if (sound)
       audio.push({
         media: sound,
-        inSec: a - (sound.offsetSec ?? 0),
-        outSec: b - (sound.offsetSec ?? 0),
+        inSec: a - sound.offsetSec!,
+        outSec: b - sound.offsetSec!,
+        startSec: cursor,
+        label: part.title,
+      });
+    if (camera?.hasAudio && camera !== sound)
+      scratch.push({
+        media: camera,
+        inSec: a - camera.offsetSec!,
+        outSec: b - camera.offsetSec!,
         startSec: cursor,
         label: part.title,
       });
@@ -377,5 +456,38 @@ export function assembleTimeline(
     if (!place(media, span.start + (span.end - span.start) / 2 - 2, span))
       rest.unshift(media);
   }
-  return { video, broll, audio, durationSec: cursor };
+  return { video, broll, audio, scratch, markers, durationSec: cursor };
+}
+
+/** Cameras that could show a story part (for picking one by hand). */
+export function camerasForPart(
+  items: readonly FolderMedia[],
+  part: PaperEdit["parts"][number],
+): FolderMedia[] {
+  if (part.kind === "performance") return [];
+  return camerasCovering(items, part.startSec, part.endSec, [
+    "talk",
+    "performance",
+    "broll",
+  ]);
+}
+
+/** Merges transcripts of several recordings (on the master's clock), skipping overlaps. */
+export function mergeWords(
+  parts: ReadonlyArray<{ offsetSec: number; words: readonly WordCue[] }>,
+): WordCue[] {
+  const merged: WordCue[] = [];
+  const covered: Array<[number, number]> = [];
+  for (const part of parts) {
+    if (!part.words.length) continue;
+    const shifted = part.words.map((w) => ({
+      ...w,
+      start: w.start + part.offsetSec,
+      end: w.end + part.offsetSec,
+    }));
+    const overlaps = (t: number) => covered.some(([a, b]) => t >= a && t < b);
+    merged.push(...shifted.filter((w) => !overlaps(w.start)));
+    covered.push([shifted[0]!.start, shifted[shifted.length - 1]!.end]);
+  }
+  return merged.sort((a, b) => a.start - b.start);
 }
