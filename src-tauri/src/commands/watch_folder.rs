@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mov", "m4v", "mkv", "webm", "avi"];
+const AUDIO_EXTENSIONS: &[&str] = &["wav", "mp3", "m4a", "aac", "flac", "aif", "aiff", "ogg"];
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,17 +16,33 @@ pub struct WatchedVideoFile {
     pub modified_ms: u64,
 }
 
-fn is_video(path: &Path) -> bool {
+fn has_extension(path: &Path, list: &[&str]) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| VIDEO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
+        .map(|ext| list.contains(&ext.to_ascii_lowercase().as_str()))
         .unwrap_or(false)
+}
+
+fn is_video(path: &Path) -> bool {
+    has_extension(path, VIDEO_EXTENSIONS)
 }
 
 /// Video files directly inside `dir` (not subfolders), oldest first.
 #[tauri::command]
 pub fn list_watch_folder_videos(dir: String) -> Result<Vec<WatchedVideoFile>, String> {
-    let root = Path::new(&dir);
+    list_files(&dir, is_video)
+}
+
+/// Video and audio files directly inside `dir` (a shoot folder for Folder → draft), oldest first.
+#[tauri::command]
+pub fn list_media_files(dir: String) -> Result<Vec<WatchedVideoFile>, String> {
+    list_files(&dir, |path| {
+        is_video(path) || has_extension(path, AUDIO_EXTENSIONS)
+    })
+}
+
+fn list_files(dir: &str, keep: impl Fn(&Path) -> bool) -> Result<Vec<WatchedVideoFile>, String> {
+    let root = Path::new(dir);
     if !root.is_dir() {
         return Err(format!("The watch folder doesn't exist: {dir}"));
     }
@@ -33,7 +50,7 @@ pub fn list_watch_folder_videos(dir: String) -> Result<Vec<WatchedVideoFile>, St
     for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
         let Ok(entry) = entry else { continue };
         let path = entry.path();
-        if !path.is_file() || !is_video(&path) {
+        if !path.is_file() || !keep(&path) {
             continue;
         }
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {

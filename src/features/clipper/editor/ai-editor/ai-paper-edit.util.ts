@@ -14,7 +14,16 @@ export interface PaperEditPart {
   endSec: number;
   wordStartIdx: number;
   wordEndIdx: number;
-  kind: "talk" | "music";
+  kind: "talk" | "music" | "performance";
+  /** For "performance": the id of a separately recorded performance (see PaperEditExtra). */
+  performanceId?: string;
+}
+
+/** A performance recorded as its own file (not in the main recording), offered to the AI by id. */
+export interface PaperEditExtra {
+  id: string;
+  label: string;
+  durationSec: number;
 }
 
 export interface PaperEdit {
@@ -67,20 +76,25 @@ Each talk part must be whole sentences (start at the first word of a sentence, e
 Reply with JSON only:
 {"title": "...", "parts": [{"title": "short part title", "from": n, "to": m}, {"title": "...", "music": "M3"}, ...]}`;
 
-export function buildPaperEditMessages(words: readonly WordCue[], targetMinutes: number, focus: string) {
+export function buildPaperEditMessages(words: readonly WordCue[], targetMinutes: number, focus: string, extras: readonly PaperEditExtra[] = []) {
   const quiet = quietStretches(words);
+  const extraText = extras.length
+    ? `\n\nSeparately recorded performances you can place too, as {"title": "...", "performance": "P1"}:\n` +
+      extras.map((e) => `${e.id}: ${e.label} (${time(e.durationSec)})`).join("\n")
+    : "";
   return [
     { role: "system" as const, content: SYSTEM },
     {
       role: "user" as const,
       content:
         `Target length: about ${targetMinutes} minutes.${focus.trim() ? ` Focus: ${focus.trim()}.` : ""}\n\n` +
-        `Transcript:\n${transcriptForPaperEdit(words, quiet)}`,
+        `Transcript:\n${transcriptForPaperEdit(words, quiet)}${extraText}`,
     },
   ];
 }
 
-export function parsePaperEdit(reply: string, words: readonly WordCue[]): PaperEdit {
+export function parsePaperEdit(reply: string, words: readonly WordCue[], extras: readonly PaperEditExtra[] = []): PaperEdit {
+  const extraById = new Map(extras.map((e) => [e.id, e]));
   const quiet = new Map(quietStretches(words).map((q) => [q.id, q]));
   const start = reply.indexOf("{");
   const end = reply.lastIndexOf("}");
@@ -89,6 +103,13 @@ export function parsePaperEdit(reply: string, words: readonly WordCue[]): PaperE
   const parts: PaperEditPart[] = [];
   for (const raw of value.parts ?? []) {
     const title = String(raw.title ?? "").trim() || "Part";
+    if (typeof raw.performance === "string") {
+      const extra = extraById.get(raw.performance);
+      if (extra && !parts.some((p) => p.performanceId === extra.id)) {
+        parts.push({ title, startSec: 0, endSec: extra.durationSec, wordStartIdx: -1, wordEndIdx: -1, kind: "performance", performanceId: extra.id });
+      }
+      continue;
+    }
     if (typeof raw.music === "string") {
       const q = quiet.get(raw.music);
       if (q) parts.push({ title, startSec: q.start, endSec: q.end, wordStartIdx: q.before, wordEndIdx: q.after, kind: "music" });
@@ -102,6 +123,7 @@ export function parsePaperEdit(reply: string, words: readonly WordCue[]): PaperE
   // Drop overlaps with an earlier part (the same footage can't play twice).
   const used: Array<[number, number]> = [];
   const clean = parts.filter((p) => {
+    if (p.kind === "performance") return true;
     if (used.some(([a, b]) => p.startSec < b && p.endSec > a)) return false;
     used.push([p.startSec, p.endSec]);
     return p.endSec - p.startSec >= 1;
@@ -114,15 +136,21 @@ export function parsePaperEdit(reply: string, words: readonly WordCue[]): PaperE
   };
 }
 
-export async function buildPaperEdit(choice: AiChoice, words: readonly WordCue[], targetMinutes: number, focus: string): Promise<PaperEdit> {
+export async function buildPaperEdit(
+  choice: AiChoice,
+  words: readonly WordCue[],
+  targetMinutes: number,
+  focus: string,
+  extras: readonly PaperEditExtra[] = [],
+): Promise<PaperEdit> {
   if (words.length < 200) throw new Error("The transcript is too short for a long-form edit.");
-  const reply = await requestEdit(choice.provider, choice.model, buildPaperEditMessages(words, targetMinutes, focus));
-  return parsePaperEdit(reply, words);
+  const reply = await requestEdit(choice.provider, choice.model, buildPaperEditMessages(words, targetMinutes, focus, extras));
+  return parsePaperEdit(reply, words, extras);
 }
 
 /** The paper edit as one AI clip, its parts in story order. */
 export function paperEditToClip(edit: PaperEdit, index: number): ClipperClipPayload {
-  const segments = edit.parts.map((part, orderIndex) => ({
+  const segments = edit.parts.filter((part) => part.kind !== "performance").map((part, orderIndex) => ({
     orderIndex,
     startSec: part.startSec,
     endSec: part.endSec,
