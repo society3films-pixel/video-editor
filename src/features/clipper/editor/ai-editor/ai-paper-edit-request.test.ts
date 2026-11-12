@@ -81,8 +81,9 @@ describe("paper edit requests", () => {
   });
 
   it("sizes Ollama's context to the prompt", () => {
-    expect(contextFor([{ content: "x".repeat(100) }], 4000)).toBe(8192);
-    expect(contextFor([{ content: "x".repeat(64000) }], 4000)).toBe(28672);
+    expect(contextFor([{ content: "x".repeat(100) }], 4000)).toBe(32768);
+    expect(contextFor([{ content: "x".repeat(64000) }], 4000)).toBe(32768);
+    expect(contextFor([{ content: "x".repeat(150000) }], 4000)).toBe(53248);
     expect(contextFor([{ content: "x".repeat(10_000_000) }], 4000)).toBe(65536);
   });
 });

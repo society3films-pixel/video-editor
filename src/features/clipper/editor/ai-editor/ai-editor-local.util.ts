@@ -113,7 +113,10 @@ function ollamaBase(): string | null {
   return /:11434(\/|$)/.test(url) ? url.replace(/\/v1\/?$/, "") : null;
 }
 
-/** A context big enough for the request (Ollama's default is small and cuts long prompts from the start). */
+/**
+ * A context big enough for the request (Ollama's default is small and cuts long prompts from the
+ * start). At least 32k, a common setting, so the model isn't reloaded for every request size.
+ */
 export function contextFor(
   messages: ReadonlyArray<{ content: string }>,
   replyTokens: number,
@@ -122,7 +125,7 @@ export function contextFor(
     messages.reduce((n, m) => n + m.content.length, 0) / 3.2,
   );
   const needed = promptTokens + replyTokens + 1024;
-  return Math.min(65536, Math.max(8192, Math.ceil(needed / 4096) * 4096));
+  return Math.min(65536, Math.max(32768, Math.ceil(needed / 4096) * 4096));
 }
 
 const stripThinking = (text: string) =>
