@@ -313,6 +313,11 @@ export async function runFolderDraft(
     options.targetMinutes,
     options.focus,
     extras,
+    {
+      signal: options.signal,
+      onProgress: (step) =>
+        onProgress(`${step} (${describeAiChoice(choice)})`, 0.8),
+    },
   );
 
   onProgress("Writing the timeline", 0.95);
