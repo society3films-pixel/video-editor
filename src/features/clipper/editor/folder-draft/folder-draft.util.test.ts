@@ -12,6 +12,9 @@ import {
   chooseMaster,
   classifyMedia,
   mergeWords,
+  planShots,
+  trimStoryPart,
+  cutStoryPart,
   type FolderMedia,
 } from "./folder-draft.util";
 import { buildFolderDraftXml } from "./folder-draft-export.util";
@@ -253,5 +256,79 @@ describe("folder draft", () => {
       ["c", 601],
       ["d", 605],
     ]);
+  });
+
+  it("cuts to whoever is talking at sentence ends, and for variety when it's unclear", () => {
+    const host = media({ name: "host.mp4" });
+    const guest = media({ name: "guest.mp4" });
+    // Sentences: 0-5 (guest), 5-10 (host asks), 10-20 (guest).
+    const words = [
+      { text: "I", start: 0.2, end: 0.5 },
+      { text: "started.", start: 4, end: 4.8 },
+      { text: "Why?", start: 5.2, end: 9.6 },
+      { text: "Because", start: 10.2, end: 11 },
+      { text: "music.", start: 18, end: 19.8 },
+    ];
+    const bins = (fn: (t: number) => number) => [
+      {
+        start: 0,
+        step: 0.5,
+        values: Array.from({ length: 40 }, (_, k) => fn(k * 0.5)),
+      },
+    ];
+    const activity = {
+      [guest.path]: bins((t) => (t < 5 || t >= 10 ? 8 : 1)),
+      [host.path]: bins((t) => (t >= 5 && t < 10 ? 8 : 1)),
+    };
+    const shots = planShots(0, 20, [host, guest], words, activity, 0);
+    expect(shots.map((s) => [s.camera.name, Number(s.a.toFixed(2)), Number(s.b.toFixed(2))])).toEqual([
+      ["guest.mp4", 0, 5],
+      ["host.mp4", 5, 9.9],
+      ["guest.mp4", 9.9, 20],
+    ]);
+    // No analysis: one camera until the variety interval, then the next at a sentence break.
+    const long = Array.from({ length: 10 }, (_, i) => ({
+      text: "Yes.",
+      start: i * 4,
+      end: i * 4 + 3,
+    }));
+    const plain = planShots(0, 40, [host, guest], long, undefined, 0);
+    expect(plain.length).toBeGreaterThan(1);
+    expect(plain.every((s) => s.b - s.a >= 2.5)).toBe(true);
+  });
+
+  it("trims and cuts words inside a talking part", () => {
+    const words = Array.from({ length: 10 }, (_, i) => ({
+      text: `w${i}`,
+      start: i,
+      end: i + 0.8,
+    }));
+    const story: PaperEdit = {
+      title: "t",
+      durationSec: 0,
+      parts: [
+        {
+          title: "A",
+          startSec: 0,
+          endSec: 9.8,
+          wordStartIdx: 0,
+          wordEndIdx: 9,
+          kind: "talk",
+        },
+      ],
+    };
+    expect(trimStoryPart(story, 0, 2, 5, words).parts[0]).toMatchObject({
+      startSec: 2,
+      endSec: 5.8,
+      wordStartIdx: 2,
+      wordEndIdx: 5,
+    });
+    const cut = cutStoryPart(story, 0, 3, 4, words);
+    expect(cut.replacedBy).toBe(2);
+    expect(cut.story.parts.map((p) => [p.startSec, p.endSec])).toEqual([
+      [0, 2.8],
+      [5, 9.8],
+    ]);
+    expect(cutStoryPart(story, 0, 0, 9, words).replacedBy).toBe(0);
   });
 });

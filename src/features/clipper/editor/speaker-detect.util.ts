@@ -30,7 +30,7 @@ function nearestPair(samples: readonly FaceBoxSample[], time: number, pick: Pick
   }
   for (const index of [lo, lo - 1]) {
     const sample = samples[index];
-    if (!sample || Math.abs(sample.time - time) > MAX_FACE_SAMPLE_GAP_SEC || sample.faces.length < 2) continue;
+    if (!sample || Math.abs(sample.time - time) > MAX_FACE_SAMPLE_GAP_SEC || sample.faces.length < (pick === selectDominantFacePair ? 2 : 1)) continue;
     const pair = pick(sample.faces);
     if (pair) return { pair, frameW: sample.frameW, frameH: sample.frameH };
   }

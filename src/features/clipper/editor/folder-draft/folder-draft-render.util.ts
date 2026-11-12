@@ -166,6 +166,8 @@ export async function renderDraftTimeline(
     width: number;
     height: number;
     fps: number;
+    /** Smaller output renders faster (e.g. 1080 from 4K cameras, or 720 for a quick look). */
+    maxHeight?: number;
     captions?: readonly DraftCaption[];
     outputSink: WritableStream<StreamTargetChunk>;
     signal?: AbortSignal;
@@ -173,8 +175,12 @@ export async function renderDraftTimeline(
   },
 ): Promise<void> {
   const { signal, onProgress } = options;
-  const width = even(options.width);
-  const height = even(options.height);
+  const scale =
+    options.maxHeight && options.height > options.maxHeight
+      ? options.maxHeight / options.height
+      : 1;
+  const width = even(options.width * scale);
+  const height = even(options.height * scale);
   const fps = Math.min(60, Math.max(12, options.fps || 30));
   const duration = timeline.durationSec;
   if (duration <= 0) throw new Error("The draft is empty.");
@@ -188,6 +194,8 @@ export async function renderDraftTimeline(
   const videoSource = new VideoSampleSource({
     codec: "avc",
     bitrate: QUALITY_HIGH,
+    // The graphics card's encoder (NVENC and the like) when there is one: much faster.
+    hardwareAcceleration: "prefer-hardware",
   });
   output.addVideoTrack(videoSource, { frameRate: fps });
   const audioSource = new AudioSampleSource(exportAudioConfig(2));

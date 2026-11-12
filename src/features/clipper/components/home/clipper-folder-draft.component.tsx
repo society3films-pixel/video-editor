@@ -5,8 +5,17 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { OutlinedActionButton } from "../../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../../shared/use-clipper-ui.hook";
 import { useAuth } from "../../../../shared/hooks/use-auth.hook";
-import { openClipperExportsDir, revealClipperExportInFolder } from "../../persistence/export-files-open.util";
-import { camerasForPart } from "../../editor/folder-draft/folder-draft.util";
+import {
+  openClipperExportsDir,
+  revealClipperExportInFolder,
+} from "../../persistence/export-files-open.util";
+import {
+  camerasForPart,
+  cutStoryPart,
+  trimStoryPart,
+} from "../../editor/folder-draft/folder-draft.util";
+import { analyzeDraftSpeakers } from "../../editor/folder-draft/folder-draft-speaker.util";
+import { isTauri } from "../../../../shared/utils/platform.util";
 import {
   draftMaster,
   draftTimeline,
@@ -70,6 +79,12 @@ export const ClipperFolderDraft: React.FC = () => {
   } | null>(null);
   const [rendered, setRendered] = useState<string | null>(null);
   const [captions, setCaptions] = useState(true);
+  const [maxHeight, setMaxHeight] = useState(1080);
+  const [openPart, setOpenPart] = useState<number | null>(null);
+  const [selection, setSelection] = useState<{
+    from: number;
+    to: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
@@ -140,6 +155,7 @@ export const ClipperFolderDraft: React.FC = () => {
       if (!draft) return;
       const path = await renderFolderDraft(draft, {
         captions,
+        maxHeight: maxHeight || undefined,
         signal,
         onProgress: (ratio) => setBusy({ step: "Rendering the MP4", ratio }),
       });
@@ -175,6 +191,46 @@ export const ClipperFolderDraft: React.FC = () => {
       story: { ...draft.story, parts: parts.filter((_, i) => i !== index) },
       cameraFor,
     });
+  };
+  const followSpeakers = () =>
+    run(async (signal) => {
+      if (!draft) return;
+      const activity = await analyzeDraftSpeakers(draft, {
+        signal,
+        onProgress: (step, ratio) => setBusy({ step, ratio }),
+      });
+      change({ ...draft, activity });
+    });
+  /** Word-level edits of a talking part: keep or cut the selected words. */
+  const editWords = (index: number, mode: "keep" | "cut") => {
+    if (!draft || !selection) return;
+    const from = Math.min(selection.from, selection.to);
+    const to = Math.max(selection.from, selection.to);
+    if (mode === "keep") {
+      change({
+        ...draft,
+        story: trimStoryPart(draft.story, index, from, to, draft.words),
+      });
+    } else {
+      const { story, replacedBy } = cutStoryPart(
+        draft.story,
+        index,
+        from,
+        to,
+        draft.words,
+      );
+      const cameraFor: Record<number, string> = {};
+      for (const [k, v] of Object.entries(draft.cameraFor)) {
+        const i = Number(k);
+        if (i < index) cameraFor[i] = v;
+        else if (i === index)
+          for (let j = 0; j < replacedBy; j++) cameraFor[index + j] = v;
+        else cameraFor[i + replacedBy - 1] = v;
+      }
+      change({ ...draft, story, cameraFor });
+      if (!replacedBy) setOpenPart(null);
+    }
+    setSelection(null);
   };
   const pickCamera = (index: number, path: string) => {
     if (!draft) return;
@@ -353,6 +409,17 @@ export const ClipperFolderDraft: React.FC = () => {
               />{" "}
               Burn in captions
             </label>
+            <select
+              value={maxHeight}
+              onChange={(e) => setMaxHeight(Number(e.target.value))}
+              style={{ ...field, padding: "2px 4px", fontSize: 12 }}
+              aria-label="Size"
+            >
+              <option value={0}>Full size (slowest)</option>
+              <option value={2160}>Up to 4K</option>
+              <option value={1080}>1080p</option>
+              <option value={720}>720p (quick look)</option>
+            </select>
             <OutlinedActionButton
               h="28px"
               px={2}
@@ -380,62 +447,158 @@ export const ClipperFolderDraft: React.FC = () => {
           </HStack>
 
           <Text fontSize="xs" fontWeight="semibold" mt={1}>
-            Story (reorder, remove, or pick the camera; both outputs follow)
+            Story (click a part to trim its words; reorder, remove, or pick the
+            camera; both outputs follow)
           </Text>
+          <HStack
+            gap={2}
+            flexWrap="wrap"
+            fontSize="xs"
+            color={theme.text.muted}
+          >
+            <Text>
+              {draft.activity
+                ? "Auto camera cuts to whoever is talking (faces analysed)."
+                : "Auto camera changes at sentence breaks for variety."}
+            </Text>
+            {isTauri() ? (
+              <OutlinedActionButton
+                h="24px"
+                px={2}
+                fontSize="xs"
+                onClick={() => void followSpeakers()}
+                disabled={Boolean(busy)}
+              >
+                {draft.activity ? "Analyse new parts" : "Follow who's talking"}
+              </OutlinedActionButton>
+            ) : null}
+          </HStack>
           {parts.map((part, index) => {
             const cameras = camerasForPart(draft.items, part);
             return (
-              <HStack
-                key={`${part.title}-${part.startSec}-${index}`}
-                gap={2}
-                fontSize="xs"
-                color={theme.text.muted}
-              >
-                <Text minW="18px">{index + 1}.</Text>
-                <Text flex={1} truncate title={part.title}>
-                  {part.kind === "talk" ? "💬" : "♪"} {part.title} (
-                  {time(part.endSec - part.startSec)})
-                </Text>
-                {cameras.length > 1 ? (
-                  <select
-                    value={draft.cameraFor[index] ?? ""}
-                    onChange={(e) => pickCamera(index, e.target.value)}
-                    style={{ ...field, padding: "2px 4px", fontSize: 12 }}
-                    aria-label="Camera"
+              <React.Fragment key={`${part.title}-${part.startSec}-${index}`}>
+                <HStack gap={2} fontSize="xs" color={theme.text.muted}>
+                  <Text minW="18px">{index + 1}.</Text>
+                  <Text
+                    flex={1}
+                    truncate
+                    title={part.title}
+                    cursor={part.kind === "talk" ? "pointer" : undefined}
+                    onClick={() => {
+                      setOpenPart(openPart === index ? null : index);
+                      setSelection(null);
+                    }}
                   >
-                    <option value="">Auto camera</option>
-                    {cameras.map((camera) => (
-                      <option key={camera.path} value={camera.path}>
-                        {camera.name}
-                      </option>
-                    ))}
-                  </select>
+                    {part.kind === "talk" ? "💬" : "♪"} {part.title} (
+                    {time(part.endSec - part.startSec)})
+                  </Text>
+                  {cameras.length > 1 ? (
+                    <select
+                      value={draft.cameraFor[index] ?? ""}
+                      onChange={(e) => pickCamera(index, e.target.value)}
+                      style={{ ...field, padding: "2px 4px", fontSize: 12 }}
+                      aria-label="Camera"
+                    >
+                      <option value="">Auto camera</option>
+                      {cameras.map((camera) => (
+                        <option key={camera.path} value={camera.path}>
+                          {camera.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <button
+                    type="button"
+                    style={iconButton}
+                    onClick={() => index > 0 && move(index, -1)}
+                    aria-label="Move up"
+                  >
+                    <ArrowUp size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    style={iconButton}
+                    onClick={() => index < parts.length - 1 && move(index, 1)}
+                    aria-label="Move down"
+                  >
+                    <ArrowDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    style={iconButton}
+                    onClick={() => remove(index)}
+                    aria-label="Remove"
+                  >
+                    <X size={13} />
+                  </button>
+                </HStack>
+                {openPart === index && part.kind === "talk" ? (
+                  <VStack align="stretch" gap={1} pl={6} pb={1}>
+                    <Text fontSize="xs" lineHeight="1.7">
+                      {draft.words
+                        .slice(part.wordStartIdx, part.wordEndIdx + 1)
+                        .map((word, k) => {
+                          const idx = part.wordStartIdx + k;
+                          const lo = selection
+                            ? Math.min(selection.from, selection.to)
+                            : -1;
+                          const hi = selection
+                            ? Math.max(selection.from, selection.to)
+                            : -1;
+                          const selected = idx >= lo && idx <= hi;
+                          return (
+                            <span
+                              key={idx}
+                              onClick={(e) =>
+                                setSelection(
+                                  e.shiftKey && selection
+                                    ? { from: selection.from, to: idx }
+                                    : { from: idx, to: idx },
+                                )
+                              }
+                              style={{
+                                cursor: "pointer",
+                                padding: "1px 2px",
+                                borderRadius: 3,
+                                background: selected
+                                  ? "rgba(120,160,255,0.35)"
+                                  : undefined,
+                              }}
+                            >
+                              {word.text}{" "}
+                            </span>
+                          );
+                        })}
+                    </Text>
+                    <HStack
+                      gap={2}
+                      fontSize="xs"
+                      color={theme.text.muted}
+                      flexWrap="wrap"
+                    >
+                      <Text>Click a word, shift-click another to select.</Text>
+                      <OutlinedActionButton
+                        h="24px"
+                        px={2}
+                        fontSize="xs"
+                        onClick={() => editWords(index, "keep")}
+                        disabled={!selection}
+                      >
+                        Keep only this
+                      </OutlinedActionButton>
+                      <OutlinedActionButton
+                        h="24px"
+                        px={2}
+                        fontSize="xs"
+                        onClick={() => editWords(index, "cut")}
+                        disabled={!selection}
+                      >
+                        Cut this out
+                      </OutlinedActionButton>
+                    </HStack>
+                  </VStack>
                 ) : null}
-                <button
-                  type="button"
-                  style={iconButton}
-                  onClick={() => index > 0 && move(index, -1)}
-                  aria-label="Move up"
-                >
-                  <ArrowUp size={13} />
-                </button>
-                <button
-                  type="button"
-                  style={iconButton}
-                  onClick={() => index < parts.length - 1 && move(index, 1)}
-                  aria-label="Move down"
-                >
-                  <ArrowDown size={13} />
-                </button>
-                <button
-                  type="button"
-                  style={iconButton}
-                  onClick={() => remove(index)}
-                  aria-label="Remove"
-                >
-                  <X size={13} />
-                </button>
-              </HStack>
+              </React.Fragment>
             );
           })}
 

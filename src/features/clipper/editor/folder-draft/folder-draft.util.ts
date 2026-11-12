@@ -256,6 +256,177 @@ export interface AssembleOptions {
   cameraFor?: ReadonlyMap<number, string>;
   /** No B-roll track. */
   noBroll?: boolean;
+  /** Mouth movement per camera (see folder-draft-speaker.util): cut to whoever is talking. */
+  activity?: CameraActivity;
+}
+
+/** Mouth movement of each camera's main face, on the master's clock, in 0.5 s bins. */
+export type CameraActivity = Record<
+  string,
+  Array<{ start: number; step: number; values: number[] }>
+>;
+
+interface Shot {
+  camera: FolderMedia;
+  a: number;
+  b: number;
+}
+
+/** A camera stays at least this long, and changes after this long when nobody else is talking. */
+const MIN_SHOT_SEC = 2.5;
+const VARIETY_SEC = 14;
+
+function activityIn(
+  runs: CameraActivity[string] | undefined,
+  a: number,
+  b: number,
+): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const run of runs ?? []) {
+    for (
+      let k = Math.max(0, Math.floor((a - run.start) / run.step));
+      k < run.values.length;
+      k++
+    ) {
+      const t = run.start + k * run.step;
+      if (t >= b) break;
+      sum += run.values[k]!;
+      count++;
+    }
+  }
+  return count ? sum / count : null;
+}
+
+/** A camera's resting mouth movement (its person listening): the 20th percentile. */
+function restingLevel(values: number[]): number {
+  const sorted = values.filter((v) => v > 0).sort((x, y) => x - y);
+  return sorted.length ? sorted[Math.floor(sorted.length * 0.2)]! : 0;
+}
+
+/**
+ * Splits a talking part into camera shots at sentence ends and pauses. With mouth movement per
+ * camera, each sentence goes to the camera whose person is talking (compared with that person's
+ * mouth at rest); otherwise, and when it's unclear (two angles on the same person),
+ * the camera changes every so often for variety.
+ */
+export function planShots(
+  a: number,
+  b: number,
+  cameras: readonly FolderMedia[],
+  words: readonly WordCue[],
+  activity: CameraActivity | undefined,
+  rotation: number,
+): Shot[] {
+  if (cameras.length < 2) return [{ camera: cameras[0]!, a, b }];
+  const inside = words.filter((w) => !w.deleted && w.start >= a && w.end <= b);
+  const cuts: number[] = [];
+  for (let i = 0; i < inside.length - 1; i++) {
+    const w = inside[i]!;
+    const next = inside[i + 1]!;
+    if (!/[.?!]["”']?$/.test(w.text) && next.start - w.end < 0.6) continue;
+    const t = (w.end + next.start) / 2;
+    if (t - a >= MIN_SHOT_SEC && b - t >= MIN_SHOT_SEC) cuts.push(t);
+  }
+  const bounds = [a, ...cuts, b];
+  const usual = new Map(
+    cameras.map((c) => [
+      c.path,
+      restingLevel((activity?.[c.path] ?? []).flatMap((r) => r.values)),
+    ]),
+  );
+  const speakerFor = (s: number, e: number): FolderMedia | null => {
+    if (!activity) return null;
+    const scored = cameras
+      .map((camera) => {
+        const value = activityIn(activity[camera.path], s, e);
+        const base = usual.get(camera.path) || 0;
+        return { camera, score: value !== null && base > 0 ? value / base : 0 };
+      })
+      .sort((x, y) => y.score - x.score);
+    return scored[0]!.score > 0 &&
+      scored[0]!.score >= (scored[1]?.score ?? 0) * 1.25
+      ? scored[0]!.camera
+      : null;
+  };
+  const shots: Shot[] = [];
+  let current = cameras[rotation % cameras.length]!;
+  let shotStart = a;
+  let turn = rotation;
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const s = bounds[i]!;
+    const e = bounds[i + 1]!;
+    const speaker = speakerFor(s, e);
+    let want = speaker ?? current;
+    if (!speaker && s - shotStart >= VARIETY_SEC)
+      want = cameras[++turn % cameras.length]!;
+    if (want !== current && s - shotStart >= MIN_SHOT_SEC) {
+      shots.push({ camera: current, a: shotStart, b: s });
+      current = want;
+      shotStart = s;
+    } else if (want !== current && !shots.length && s === a) {
+      current = want;
+    }
+  }
+  shots.push({ camera: current, a: shotStart, b });
+  return shots;
+}
+
+/** Keeps only words fromIdx..toIdx of a talking part. */
+export function trimStoryPart(
+  story: PaperEdit,
+  index: number,
+  fromIdx: number,
+  toIdx: number,
+  words: readonly WordCue[],
+): PaperEdit {
+  const part = story.parts[index];
+  if (
+    !part ||
+    part.kind !== "talk" ||
+    toIdx < fromIdx ||
+    !words[fromIdx] ||
+    !words[toIdx]
+  )
+    return story;
+  const parts = [...story.parts];
+  parts[index] = {
+    ...part,
+    wordStartIdx: fromIdx,
+    wordEndIdx: toIdx,
+    startSec: words[fromIdx]!.start,
+    endSec: words[toIdx]!.end,
+  };
+  return { ...story, parts };
+}
+
+/** Removes words fromIdx..toIdx from a talking part (it may become two parts, or none). Returns how many parts replace it. */
+export function cutStoryPart(
+  story: PaperEdit,
+  index: number,
+  fromIdx: number,
+  toIdx: number,
+  words: readonly WordCue[],
+): { story: PaperEdit; replacedBy: number } {
+  const part = story.parts[index];
+  if (!part || part.kind !== "talk") return { story, replacedBy: 1 };
+  const pieces = [];
+  if (fromIdx > part.wordStartIdx)
+    pieces.push({
+      ...part,
+      wordEndIdx: fromIdx - 1,
+      endSec: words[fromIdx - 1]!.end,
+    });
+  if (toIdx < part.wordEndIdx)
+    pieces.push({
+      ...part,
+      title: pieces.length ? `${part.title} (cont.)` : part.title,
+      wordStartIdx: toIdx + 1,
+      startSec: words[toIdx + 1]!.start,
+    });
+  const parts = [...story.parts];
+  parts.splice(index, 1, ...pieces);
+  return { story: { ...story, parts }, replacedBy: pieces.length };
 }
 
 /** Synced files with sound that cover master time [a, b]: recorders first, then the given camera. */
@@ -368,23 +539,26 @@ export function assembleTimeline(
           (m) => m.path === picked,
         )
       : undefined;
-    const camera =
-      pickedCamera ??
-      (cameras.length
-        ? cameras[(isSong ? 0 : talkIndex++) % cameras.length]!
-        : master.hasVideo
-          ? master
-          : null);
-    if (camera)
+    let shots: Shot[];
+    if (pickedCamera) shots = [{ camera: pickedCamera, a, b }];
+    else if (!cameras.length)
+      shots = master.hasVideo ? [{ camera: master, a, b }] : [];
+    else if (isSong) shots = [{ camera: cameras[0]!, a, b }];
+    else {
+      shots = planShots(a, b, cameras, words, options.activity, talkIndex);
+      talkIndex += shots.length;
+    }
+    for (const shot of shots) {
       video.push({
-        media: camera,
-        inSec: a - camera.offsetSec!,
-        outSec: b - camera.offsetSec!,
-        startSec: cursor,
+        media: shot.camera,
+        inSec: shot.a - shot.camera.offsetSec!,
+        outSec: shot.b - shot.camera.offsetSec!,
+        startSec: cursor + shot.a - a,
         label: part.title,
       });
+    }
     // Sound: a separate recorder when one covers the part, else the camera's own.
-    const sound = soundFor(items, master, camera, a, b);
+    const sound = soundFor(items, master, shots[0]?.camera ?? null, a, b);
     if (sound)
       audio.push({
         media: sound,
@@ -393,14 +567,16 @@ export function assembleTimeline(
         startSec: cursor,
         label: part.title,
       });
-    if (camera?.hasAudio && camera !== sound)
+    for (const shot of shots) {
+      if (!shot.camera.hasAudio || shot.camera === sound) continue;
       scratch.push({
-        media: camera,
-        inSec: a - camera.offsetSec!,
-        outSec: b - camera.offsetSec!,
-        startSec: cursor,
+        media: shot.camera,
+        inSec: shot.a - shot.camera.offsetSec!,
+        outSec: shot.b - shot.camera.offsetSec!,
+        startSec: cursor + shot.a - a,
         label: part.title,
       });
+    }
     if (!isSong) talkSpans.push({ start: cursor, end: cursor + (b - a), a, b });
     cursor += b - a;
   }

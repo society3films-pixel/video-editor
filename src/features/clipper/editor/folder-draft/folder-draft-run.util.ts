@@ -22,6 +22,7 @@ import {
   fileFor,
   mergeWords,
   type AssembleOptions,
+  type CameraActivity,
   type DraftTimeline,
   type FolderMedia,
 } from "./folder-draft.util";
@@ -47,6 +48,8 @@ export interface FolderDraft {
   performances: Record<string, string>;
   cameraFor: Record<number, string>;
   noBroll: boolean;
+  /** Mouth movement per camera, once analysed: the draft cuts to whoever is talking. */
+  activity?: CameraActivity;
   ai: string;
   createdAt: number;
 }
@@ -93,6 +96,7 @@ export function draftTimeline(draft: FolderDraft): DraftTimeline {
       Object.entries(draft.cameraFor).map(([k, v]) => [Number(k), v]),
     ),
     noBroll: draft.noBroll,
+    activity: draft.activity,
   };
   return assembleTimeline(
     draft.story,
@@ -169,6 +173,7 @@ export async function renderFolderDraft(
   draft: FolderDraft,
   options: {
     captions: boolean;
+    maxHeight?: number;
     onProgress?: (ratio: number) => void;
     signal?: AbortSignal;
   },
@@ -180,6 +185,7 @@ export async function renderFolderDraft(
   try {
     await renderDraftTimeline(timeline, {
       ...draftSequence(timeline, draftMaster(draft)),
+      maxHeight: options.maxHeight,
       captions: options.captions
         ? draftCaptions(draft.story, draft.words)
         : undefined,
