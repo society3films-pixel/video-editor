@@ -3,13 +3,14 @@ import { Flex } from "@chakra-ui/react";
 import { clipperTheme } from "../shared/theme.util";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 
-export type ClipperHomeTab = "projects" | "integrations" | "publish" | "owners" | "settings" | "mcp";
+export type ClipperHomeTab = "projects" | "integrations" | "publish" | "owners" | "ai" | "settings" | "mcp";
 
 const OPTIONS: Array<{ value: ClipperHomeTab; label: string }> = [
   { value: "projects", label: "Projects" },
   { value: "integrations", label: "Integrations" },
   { value: "publish", label: "Publish" },
   { value: "owners", label: "Owners" },
+  { value: "ai", label: "AI" },
   { value: "settings", label: "Settings" },
   { value: "mcp", label: "MCP" },
 ];

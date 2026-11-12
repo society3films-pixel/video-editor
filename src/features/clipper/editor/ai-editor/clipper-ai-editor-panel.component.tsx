@@ -25,9 +25,11 @@ export interface AiEditorTurn {
 }
 
 interface ClipperAiEditorPanelProps {
-  onRun: (instruction: string, provider: AiProvider, model: string) => Promise<AiEditorTurn>;
-  hasTranscript: boolean;
-  disabled: boolean;
+  onRun?: (instruction: string, provider: AiProvider, model: string) => Promise<AiEditorTurn>;
+  hasTranscript?: boolean;
+  disabled?: boolean;
+  /** Only the provider / key / model setup (the home page's AI tab). */
+  setupOnly?: boolean;
 }
 
 const SUGGESTIONS = [
@@ -56,7 +58,7 @@ function saveModel(provider: AiProvider, model: string): void {
   }
 }
 
-export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRun, hasTranscript, disabled }) => {
+export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRun, hasTranscript = true, disabled = false, setupOnly = false }) => {
   const { theme } = useClipperUi();
   const [providers, setProviders] = useState<AiProviderStatus[] | null>(null);
   const [keyDraft, setKeyDraft] = useState("");
@@ -153,7 +155,7 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
   }, [provider, providerReady, modelsVersion]);
 
   const run = async (text: string) => {
-    if (!provider || !model || !text.trim() || running) return;
+    if (!provider || !model || !text.trim() || running || !onRun) return;
     setRunning(true);
     try {
       const turn = await onRun(text.trim(), provider, model);
@@ -177,12 +179,13 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
 
   return (
     <VStack align="stretch" gap={3}>
-      <Section title="AI editor">
+      <Section title={setupOnly ? "AI model" : "AI editor"}>
         <Text fontSize="xs" color={theme.text.muted}>
-          Describe the edit you want. The AI reads the transcript and makes cuts, zooms, text, caption, audio and framing
-          changes you can review and undo (Ctrl+Z).
+          {setupOnly
+            ? "Choose the AI every feature uses (clip picking, the AI editor, titles, translation, chapters, scores, the long-form edit, B-roll tagging). The choice is remembered and can be changed here or in any editor's AI tab."
+            : "Describe the edit you want. The AI reads the transcript and makes cuts, zooms, text, caption, audio and framing changes you can review and undo (Ctrl+Z)."}
         </Text>
-        {!hasTranscript ? (
+        {!hasTranscript && !setupOnly ? (
           <Text fontSize="xs" color={theme.status.danger}>
             This clip has no transcript here, so the AI can only change audio and fades.
           </Text>
@@ -298,6 +301,14 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
             {modelError}
           </Text>
         ) : null}
+        {setupOnly ? (
+          providerReady && model ? (
+            <Text fontSize="xs" color={theme.status.success}>
+              Ready: {AI_PROVIDER_LABEL[provider!]} · {model}
+            </Text>
+          ) : null
+        ) : (
+        <>
         <textarea
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
@@ -351,6 +362,8 @@ export const ClipperAiEditorPanel: React.FC<ClipperAiEditorPanelProps> = ({ onRu
             </Box>
           ))}
         </VStack>
+        </>
+        )}
       </Section>
 
       {turns.length > 0 ? (

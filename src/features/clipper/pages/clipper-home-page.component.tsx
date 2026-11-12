@@ -25,6 +25,7 @@ import { ClipperPublishView } from "../components/clipper-publish-view.component
 import { ClipperOwnersView } from "../components/clipper-owners-view.component";
 import { CreateClipperProjectModal } from "./create-clipper-project-modal.component";
 import { ClipperTauriGate } from "./clipper-tauri-gate.component";
+import { ClipperHomeAiView } from "../components/home/clipper-home-ai-view.component";
 import { ClipperWatchFolder } from "../components/home/clipper-watch-folder.component";
 import { isTauri } from "../../../shared/utils/platform.util";
 import { ClipperTranscriptSearch } from "../components/home/clipper-transcript-search.component";
@@ -70,6 +71,7 @@ export function ClipperHomePage() {
     if (
       requested !== "integrations" &&
       requested !== "settings" &&
+      requested !== "ai" &&
       requested !== "mcp" &&
       requested !== "publish" &&
       requested !== "owners"
@@ -132,6 +134,8 @@ export function ClipperHomePage() {
       >
         {activeTab === "integrations" ? (
           <ClipperIntegrationsView />
+        ) : activeTab === "ai" ? (
+          <ClipperHomeAiView />
         ) : activeTab === "settings" ? (
           <ClipperHomeSettingsView />
         ) : activeTab === "mcp" ? (
