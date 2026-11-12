@@ -616,6 +616,7 @@ export const ClipperFolderDraft: React.FC = () => {
               }
             >
               {item === master ? "★ " : ""}
+              {item.folder ? `${item.folder}/` : ""}
               {item.name}: {ROLE_LABEL[item.role]}, {time(item.durationSec)}
               {item === master
                 ? " (master sound)"

@@ -18,6 +18,8 @@ export type FolderMediaRole = "talk" | "performance" | "broll" | "recorder";
 export interface FolderMedia {
   path: string;
   name: string;
+  /** Subfolder in the shoot folder (absent in drafts made before subfolders were searched). */
+  folder?: string;
   hasVideo: boolean;
   hasAudio: boolean;
   durationSec: number;
@@ -38,6 +40,63 @@ interface ListedFile {
   name: string;
   size: number;
   modifiedMs: number;
+  /** Subfolder inside the shoot folder ("" when directly in it). */
+  folder: string;
+}
+
+/**
+ * What a folder name says its files are ("Audio", "Sound/Zoom", "B-roll", "Cam A", "Performance",
+ * "Live songs"…), checked from the innermost folder out. Null when it doesn't say.
+ */
+export function roleFromFolder(folder: string): FolderMediaRole | null {
+  for (const part of folder.split("/").reverse()) {
+    const name = part.toLowerCase();
+    if (
+      /b[\s_-]*roll|cutaway|insert|detail|establishing|\bbts\b|behind/.test(
+        name,
+      )
+    )
+      return "broll";
+    if (/interview/.test(name)) return "talk";
+    if (/perform|live|song|music|set\b|gig|concert|session|playing/.test(name))
+      return "performance";
+    if (
+      /audio|sound|recorder|\bzoom\b|tascam|\bwav\b|\blav|\bmic|\bboom/.test(
+        name,
+      )
+    )
+      return "recorder";
+    if (
+      /interview|\bcam|camera|\ba[\s_-]?cam|\bb[\s_-]?cam|angle|\bwide|\bclose|talk/.test(
+        name,
+      )
+    )
+      return "talk";
+  }
+  return null;
+}
+
+/** A folder's hint wins over the sound when it fits the file (a recorder has no picture, etc.). */
+export function classifyWithFolder(
+  item: {
+    hasVideo: boolean;
+    hasAudio: boolean;
+    durationSec: number;
+    speech: number;
+    music: number;
+  },
+  folder: string,
+): FolderMediaRole {
+  const hint = roleFromFolder(folder);
+  if (hint === "recorder" && !item.hasVideo && item.hasAudio) return "recorder";
+  if (hint === "broll" && item.hasVideo) return "broll";
+  if (
+    (hint === "performance" || hint === "talk") &&
+    item.hasVideo &&
+    item.hasAudio
+  )
+    return hint;
+  return classifyMedia(item);
 }
 
 const AUDIO_ONLY = /\.(wav|mp3|m4a|aac|flac|aiff?|ogg)$/i;
@@ -156,7 +215,9 @@ export async function analyzeShoot(
   const items: FolderMedia[] = [];
   const envelopes = new Map<string, Float32Array>();
   for (const [index, file] of listed.entries()) {
-    onProgress(`Listening to ${file.name}`, index / listed.length);
+    const folder = file.folder ?? "";
+    const shown = folder ? `${folder}/${file.name}` : file.name;
+    onProgress(`Listening to ${shown}`, index / listed.length);
     const info = await probe(file.path, file.name).catch(() => null);
     if (!info) continue;
     let profile = { speech: 0, music: 0, silent: 1 };
@@ -165,14 +226,17 @@ export async function analyzeShoot(
         fileFor({ path: file.path, name: file.name }),
       );
       profile = soundProfile(levels);
-      envelopes.set(file.path, envelopeFromLevels(levels));
+      // B-roll (by its folder) isn't lined up: it's placed as cutaways.
+      if (roleFromFolder(folder) !== "broll" || !info.hasVideo)
+        envelopes.set(file.path, envelopeFromLevels(levels));
     }
     const base = { ...info, speech: profile.speech, music: profile.music };
     items.push({
       path: file.path,
       name: file.name,
+      folder,
       ...base,
-      role: classifyMedia(base),
+      role: classifyWithFolder(base, folder),
       offsetSec: null,
       syncScore: 0,
     });
@@ -613,7 +677,7 @@ export function assembleTimeline(
   // 1. Where a shot's name is said.
   const byStem = new Map<string, FolderMedia>();
   for (const media of pool)
-    for (const tag of tagsFromName(media.name))
+    for (const tag of tagsFromName(`${media.folder ?? ""} ${media.name}`))
       if (stem(tag).length >= 3) byStem.set(stem(tag), media);
   for (const span of talkSpans) {
     for (const word of words) {

@@ -12,6 +12,8 @@ import {
   chooseMaster,
   classifyMedia,
   mergeWords,
+  roleFromFolder,
+  classifyWithFolder,
   planShots,
   trimStoryPart,
   cutStoryPart,
@@ -281,7 +283,13 @@ describe("folder draft", () => {
       [host.path]: bins((t) => (t >= 5 && t < 10 ? 8 : 1)),
     };
     const shots = planShots(0, 20, [host, guest], words, activity, 0);
-    expect(shots.map((s) => [s.camera.name, Number(s.a.toFixed(2)), Number(s.b.toFixed(2))])).toEqual([
+    expect(
+      shots.map((s) => [
+        s.camera.name,
+        Number(s.a.toFixed(2)),
+        Number(s.b.toFixed(2)),
+      ]),
+    ).toEqual([
       ["guest.mp4", 0, 5],
       ["host.mp4", 5, 9.9],
       ["guest.mp4", 9.9, 20],
@@ -330,5 +338,32 @@ describe("folder draft", () => {
       [5, 9.8],
     ]);
     expect(cutStoryPart(story, 0, 0, 9, words).replacedBy).toBe(0);
+  });
+
+  it("uses folder names to sort files", () => {
+    expect(roleFromFolder("Audio/Zoom")).toBe("recorder");
+    expect(roleFromFolder("Video/B-Roll/Guitar shop")).toBe("broll");
+    expect(roleFromFolder("Video/Cam A")).toBe("talk");
+    expect(roleFromFolder("Interview session")).toBe("talk");
+    expect(roleFromFolder("Live songs")).toBe("performance");
+    expect(roleFromFolder("Video")).toBeNull();
+    const camWithMusic = {
+      hasVideo: true,
+      hasAudio: true,
+      durationSec: 30,
+      speech: 0.1,
+      music: 0.2,
+    };
+    expect(classifyWithFolder(camWithMusic, "Cam B")).toBe("talk");
+    expect(classifyWithFolder(camWithMusic, "Performances")).toBe(
+      "performance",
+    );
+    // A hint that doesn't fit the file is ignored: a video can't be the sound recorder.
+    expect(
+      classifyWithFolder(
+        { ...camWithMusic, durationSec: 120, speech: 0.6 },
+        "Audio",
+      ),
+    ).toBe("talk");
   });
 });
