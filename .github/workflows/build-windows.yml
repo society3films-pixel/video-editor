@@ -85,9 +85,12 @@ jobs:
           $out = "open-clipper-windows"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           Copy-Item "$release/open-clipper.exe" $out
-          Copy-Item "$release/*.dll" $out
+          Copy-Item "$release/*.dll" $out -Exclude "DirectML.Debug.dll"
           if (Test-Path "$release/resources") { Copy-Item "$release/resources" $out -Recurse }
           Get-ChildItem $out -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+          foreach ($required in @("onnxruntime_ort.dll", "DirectML.dll", "resources/models/clipper-vision/manifest.json")) {
+            if (-not (Test-Path (Join-Path $out $required))) { throw "The app download would be missing $required." }
+          }
 
       - uses: actions/upload-artifact@v4
         with:

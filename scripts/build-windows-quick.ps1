@@ -251,6 +251,21 @@ if (-not (Test-Path (Join-Path $ReleaseDir "sherpa-onnx-c-api.dll"))) {
     ForEach-Object { Copy-Item $_.FullName $ReleaseDir -Force }
 }
 
+# Face detection and vocals isolation load ONNX Runtime 1.23 as onnxruntime_ort.dll (sherpa keeps
+# its own 1.14 as onnxruntime.dll). build.rs stages it, but not when Cargo replays a cached build
+# script, so copy it here every time.
+Copy-Item $ortDll (Join-Path $ReleaseDir "onnxruntime_ort.dll") -Force
+
+# The vision models are read from resources\models\clipper-vision next to the exe.
+$modelsSource = Join-Path $ProjectRoot "src-tauri\resources\models\clipper-vision"
+$modelsDest = Join-Path $ReleaseDir "resources\models\clipper-vision"
+New-Item -ItemType Directory -Force -Path $modelsDest | Out-Null
+Copy-Item (Join-Path $modelsSource "*") $modelsDest -Force
+
+foreach ($required in @("onnxruntime_ort.dll", "DirectML.dll", "sherpa-onnx-c-api.dll", "resources\models\clipper-vision\manifest.json")) {
+  if (-not (Test-Path (Join-Path $ReleaseDir $required))) { throw "The app needs $required next to open-clipper.exe, but it is missing." }
+}
+
 $exe = Join-Path $ReleaseDir "open-clipper.exe"
 if (-not (Test-Path $exe)) { throw "The build finished but $exe is missing." }
 
