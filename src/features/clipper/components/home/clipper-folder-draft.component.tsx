@@ -13,7 +13,9 @@ import {
   camerasForPart,
   cutStoryPart,
   trimStoryPart,
+  type FolderMedia,
 } from "../../editor/folder-draft/folder-draft.util";
+import { refineOffset } from "../../editor/folder-draft/folder-draft-sync.util";
 import { analyzeDraftSpeakers } from "../../editor/folder-draft/folder-draft-speaker.util";
 import { isTauri } from "../../../../shared/utils/platform.util";
 import {
@@ -42,6 +44,39 @@ function time(sec: number): string {
     ? `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
     : `${m}:${String(s % 60).padStart(2, "0")}`;
 }
+
+function syncDetail(item: FolderMedia): string {
+  const bits: string[] = [];
+  if (item.sync?.method === "timecode") bits.push("by timecode");
+  else if (item.sync?.method === "manual") bits.push("set by hand");
+  else if (item.sync)
+    bits.push(`${item.sync.agreed} of ${item.sync.tried} checks agree`);
+  else bits.push(`${Math.round(item.syncScore * 100)}% match`);
+  if (item.drift && Math.abs(item.drift) > 2e-6)
+    bits.push(`drift ${(item.drift * 1e6).toFixed(0)} ppm`);
+  if (item.sync?.refined) bits.push("fine-tuned");
+  return ` (${bits.join(", ")})`;
+}
+
+/** "m:ss", "h:mm:ss" or seconds → seconds. */
+function parseTime(text: string): number | null {
+  const trimmed = text.trim();
+  const negative = trimmed.startsWith("-");
+  const parts = trimmed.replace(/^-/, "").split(":").map(Number);
+  if (!parts.length || parts.some((p) => !Number.isFinite(p))) return null;
+  const sec = parts.reduce((total, p) => total * 60 + p, 0);
+  return negative ? -sec : sec;
+}
+
+const nudgeButton: React.CSSProperties = {
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 4,
+  color: "inherit",
+  cursor: "pointer",
+  padding: "0 5px",
+  fontSize: 11,
+};
 
 const field: React.CSSProperties = {
   background: "rgba(0,0,0,0.35)",
@@ -192,6 +227,59 @@ export const ClipperFolderDraft: React.FC = () => {
       cameraFor,
     });
   };
+  const setItem = (path: string, patch: Partial<FolderMedia>) => {
+    if (!draft) return;
+    change({
+      ...draft,
+      items: draft.items.map((m) => (m.path === path ? { ...m, ...patch } : m)),
+      activity: undefined,
+    });
+  };
+  const nudge = (path: string, by: number) => {
+    const item = draft?.items.find((m) => m.path === path);
+    if (item?.offsetSec == null) return;
+    setItem(path, {
+      offsetSec: item.offsetSec + by,
+      sync: {
+        ...(item.sync ?? { agreed: 0, tried: 0, refined: false }),
+        method: "manual",
+        refined: false,
+      },
+    });
+  };
+  const fineTune = (path: string) =>
+    run(async () => {
+      if (!draft) return;
+      const item = draft.items.find((m) => m.path === path);
+      const ref = draftMaster(draft);
+      if (!item || !ref) return;
+      setBusy({ step: `Fine-tuning ${item.name}`, ratio: 0.5 });
+      const others = [
+        ref,
+        ...draft.items.filter(
+          (m) => m !== item && m !== ref && m.offsetSec !== null && m.hasAudio,
+        ),
+      ];
+      for (const reference of others) {
+        const refined = await refineOffset(item, reference, {
+          searchSec: 1.5,
+          places: 4,
+        });
+        if (refined) {
+          setItem(path, {
+            offsetSec: refined.offsetSec,
+            sync: {
+              ...(item.sync ?? { method: "manual", agreed: 0, tried: 0 }),
+              refined: true,
+            },
+          });
+          return;
+        }
+      }
+      throw new Error(
+        `Couldn't find ${item.name}'s sound near there. Nudge it closer (within a second) and try again.`,
+      );
+    });
   const followSpeakers = () =>
     run(async (signal) => {
       if (!draft) return;
@@ -605,30 +693,114 @@ export const ClipperFolderDraft: React.FC = () => {
           <Text fontSize="xs" fontWeight="semibold" mt={1}>
             Files
           </Text>
-          {draft.items.map((item) => (
-            <Text
-              key={item.path}
-              fontSize="xs"
-              color={
-                item.offsetSec === null && item.role !== "broll"
-                  ? theme.status.warning
-                  : theme.text.muted
-              }
-            >
-              {item === master ? "★ " : ""}
-              {item.folder ? `${item.folder}/` : ""}
-              {item.name}: {ROLE_LABEL[item.role]}, {time(item.durationSec)}
-              {item === master
+          <Text fontSize="xs" color={theme.text.muted}>
+            Out of sync? Nudge a file by a frame or a second, then Fine-tune
+            locks it to the sound nearby.
+          </Text>
+          {draft.items.map((item) => {
+            const synced = item.offsetSec !== null && item !== master;
+            const frame = 1 / (item.fps || 25);
+            const status =
+              item === master
                 ? " (master sound)"
                 : item.offsetSec !== null
-                  ? `, lined up at ${item.offsetSec < 0 ? "-" : ""}${time(Math.abs(item.offsetSec))} (${Math.round(item.syncScore * 100)}% match)`
+                  ? `, lined up at ${item.offsetSec < 0 ? "-" : ""}${time(Math.abs(item.offsetSec))}${syncDetail(item)}`
                   : item.role === "broll"
                     ? ""
                     : item.role === "performance"
                       ? ", separate take (placed whole)"
-                      : ", couldn't be lined up"}
-            </Text>
-          ))}
+                      : ", couldn't be lined up";
+            return (
+              <HStack
+                key={item.path}
+                gap={1}
+                fontSize="xs"
+                flexWrap="wrap"
+                color={
+                  item.offsetSec === null && item.role !== "broll"
+                    ? theme.status.warning
+                    : theme.text.muted
+                }
+              >
+                <Text>
+                  {item === master ? "★ " : ""}
+                  {item.folder ? `${item.folder}/` : ""}
+                  {item.name}: {ROLE_LABEL[item.role]}, {time(item.durationSec)}
+                  {status}
+                </Text>
+                {synced ? (
+                  <>
+                    {[
+                      ["−1s", -1],
+                      ["−1f", -frame],
+                      ["+1f", frame],
+                      ["+1s", 1],
+                    ].map(([label, by]) => (
+                      <button
+                        key={label as string}
+                        type="button"
+                        style={nudgeButton}
+                        onClick={() => nudge(item.path, by as number)}
+                        disabled={Boolean(busy)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      style={nudgeButton}
+                      onClick={() => void fineTune(item.path)}
+                      disabled={Boolean(busy)}
+                    >
+                      Fine-tune
+                    </button>
+                    <button
+                      type="button"
+                      style={nudgeButton}
+                      onClick={() =>
+                        setItem(item.path, {
+                          offsetSec: null,
+                          drift: 0,
+                          sync: undefined,
+                        })
+                      }
+                      disabled={Boolean(busy)}
+                    >
+                      Unlink
+                    </button>
+                  </>
+                ) : item !== master && item.role !== "broll" ? (
+                  <input
+                    placeholder="line up at m:ss"
+                    style={{
+                      ...field,
+                      padding: "1px 6px",
+                      fontSize: 12,
+                      width: 120,
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      const sec = parseTime(
+                        (e.target as HTMLInputElement).value,
+                      );
+                      if (sec !== null)
+                        setItem(item.path, {
+                          offsetSec: sec,
+                          drift: 0,
+                          sync: {
+                            method: "manual",
+                            agreed: 0,
+                            tried: 0,
+                            refined: false,
+                          },
+                        });
+                    }}
+                    aria-label={`Line up ${item.name} at`}
+                  />
+                ) : null}
+              </HStack>
+            );
+          })}
         </VStack>
       ) : null}
     </VStack>

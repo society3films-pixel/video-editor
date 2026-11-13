@@ -181,6 +181,45 @@ mod tests {
     }
 }
 
+/// Levels of a short stretch of a file's sound at fine detail (for precise sync).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioLevelsWindow {
+    /// File time of the first level frame.
+    pub start_sec: f64,
+    pub levels: Vec<f32>,
+}
+
+#[tauri::command]
+pub async fn media_audio_levels_window(
+    path: String,
+    start_sec: f64,
+    duration_sec: f64,
+    frame_ms: u32,
+) -> Result<AudioLevelsWindow, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::video::ffmpeg::audio_levels::audio_levels_window_blocking(
+            &path,
+            start_sec,
+            duration_sec,
+            frame_ms,
+        )
+        .map(|(start_sec, levels)| AudioLevelsWindow { start_sec, levels })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Timecode of a file's start (seconds since midnight), when it has one.
+#[tauri::command]
+pub async fn media_timecode(path: String) -> Result<Option<f64>, String> {
+    tokio::task::spawn_blocking(move || {
+        crate::video::ffmpeg::audio_levels::media_timecode_blocking(&path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Sound level per `frame_ms` of a media file (RMS of a mono mix), decoded natively.
 #[tauri::command]
 pub async fn media_audio_levels(path: String, frame_ms: u32) -> Result<Vec<f32>, String> {

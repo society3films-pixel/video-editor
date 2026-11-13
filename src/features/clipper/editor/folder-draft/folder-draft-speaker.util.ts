@@ -6,6 +6,7 @@
 import { FaceSampleCache } from "../../engine/reframe/cache.util";
 import { prefillFaceSampleCache } from "../../engine/reframe/analysis.util";
 import { measureMainMouthActivity } from "../speaker-detect.util";
+import { fileTimeOf, masterTimeOf } from "./folder-draft-sync.util";
 import {
   camerasForPart,
   fileFor,
@@ -46,8 +47,8 @@ export async function analyzeDraftSpeakers(
       `Watching ${camera.name} (${index + 1} of ${jobs.length})`,
       ratio,
     );
-    const fileStart = Math.max(0, a - camera.offsetSec!);
-    const fileEnd = Math.min(camera.durationSec, b - camera.offsetSec!);
+    const fileStart = Math.max(0, fileTimeOf(camera, a));
+    const fileEnd = Math.min(camera.durationSec, fileTimeOf(camera, b));
     if (fileEnd - fileStart < 1) continue;
     const file = fileFor(camera);
     const cache = new FaceSampleCache();
@@ -85,7 +86,7 @@ export async function analyzeDraftSpeakers(
     for (let k = 0; k < values.length; k++)
       values[k] = counts[k] ? Number((values[k]! / counts[k]!).toFixed(2)) : 0;
     (activity[camera.path] ??= []).push({
-      start: fileStart + camera.offsetSec!,
+      start: masterTimeOf(camera, fileStart),
       step: BIN_SEC,
       values,
     });

@@ -9,6 +9,7 @@ import type { ClipperClipSegmentWindow } from "../engine/segmentation/segmentati
 import { frameLevels, inMusicSection } from "./music-detect.util";
 import type { ClipEdit, ClipEditSegment } from "./clip-edit.util";
 import { loadEditorAsset } from "./editor-assets.util";
+import { correlatePeaks } from "./correlate.util";
 
 export interface ClipAngle {
   id: string;
@@ -47,30 +48,10 @@ export function envelopeFromLevels(levels: Float32Array): Float32Array {
 
 /**
  * Best lag (in envelope steps) of `reference` inside `target`: target[i + lag] ≈ reference[i].
- * Normalised cross-correlation over every lag; returns the lag and its correlation.
+ * Normalised cross-correlation over every lag (FFT); returns the lag and its correlation.
  */
 export function bestLag(reference: Float32Array, target: Float32Array): { lag: number; score: number } {
-  let best = { lag: 0, score: -Infinity };
-  const n = reference.length;
-  let refNorm = 0;
-  for (const v of reference) refNorm += v * v;
-  refNorm = Math.sqrt(refNorm) || 1;
-  for (let lag = -Math.floor(n / 2); lag + n / 2 <= target.length; lag++) {
-    let dot = 0;
-    let norm = 0;
-    let used = 0;
-    for (let i = 0; i < n; i++) {
-      const t = target[i + lag];
-      if (t === undefined) continue;
-      dot += reference[i]! * t;
-      norm += t * t;
-      used++;
-    }
-    if (used < n / 2) continue;
-    const score = dot / (refNorm * (Math.sqrt(norm) || 1));
-    if (score > best.score) best = { lag, score };
-  }
-  return best;
+  return correlatePeaks(reference, target)[0] ?? { lag: 0, score: -Infinity };
 }
 
 /**

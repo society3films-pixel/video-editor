@@ -7,6 +7,8 @@ macro_rules! invoke_handler {
             crate::commands::local_ai::local_ai_request,
             crate::commands::watch_folder::list_watch_folder_videos,
             crate::commands::watch_folder::media_audio_levels,
+            crate::commands::watch_folder::media_audio_levels_window,
+            crate::commands::watch_folder::media_timecode,
             crate::commands::watch_folder::list_media_files,
             crate::commands::app_updates::get_app_name,
             crate::commands::app_updates::get_app_version,

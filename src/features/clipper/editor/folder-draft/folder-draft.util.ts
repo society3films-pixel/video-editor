@@ -9,7 +9,14 @@ import { createMediabunnyInput } from "../../lib/media/mediabunny-file-source.ut
 import type { WordCue } from "../../lib/media/transcription-export.util";
 import { pathBackedFile } from "../../platform/native-source.util";
 import { frameLevels, musicSectionsFromLevels } from "../music-detect.util";
-import { bestLag, envelopeFromLevels } from "../multicam.util";
+import {
+  fileTimeOf,
+  masterTimeOf,
+  readTimecode,
+  refineOffset,
+  syncFeature,
+  syncItem,
+} from "./folder-draft-sync.util";
 import { tagsFromName } from "../broll-library.util";
 import type { PaperEdit } from "../ai-editor/ai-paper-edit.util";
 
@@ -32,7 +39,18 @@ export interface FolderMedia {
   music: number;
   /** Where this file's t=0 sits on the master's clock; null = not lined up. */
   offsetSec: number | null;
+  /** Clock drift against the master (master time = offset + file time × (1 + drift)). */
+  drift?: number;
   syncScore: number;
+  /** How the file was lined up, and how many of the places checked agreed. */
+  sync?: {
+    method: "sound" | "timecode" | "manual";
+    agreed: number;
+    tried: number;
+    refined: boolean;
+  };
+  /** Embedded timecode of the file's start (seconds since midnight), when it has one. */
+  timecodeSec?: number | null;
 }
 
 interface ListedFile {
@@ -101,7 +119,6 @@ export function classifyWithFolder(
 
 const AUDIO_ONLY = /\.(wav|mp3|m4a|aac|flac|aiff?|ogg)$/i;
 const SILENCE_RMS = 0.004;
-const MIN_SYNC_SCORE = 0.35;
 
 export function listShootFolder(dir: string): Promise<ListedFile[]> {
   return invoke<ListedFile[]>("list_media_files", { dir });
@@ -228,7 +245,7 @@ export async function analyzeShoot(
       profile = soundProfile(levels);
       // B-roll (by its folder) isn't lined up: it's placed as cutaways.
       if (roleFromFolder(folder) !== "broll" || !info.hasVideo)
-        envelopes.set(file.path, envelopeFromLevels(levels));
+        envelopes.set(file.path, syncFeature(levels));
     }
     const base = { ...info, speech: profile.speech, music: profile.music };
     items.push({
@@ -239,17 +256,23 @@ export async function analyzeShoot(
       role: classifyWithFolder(base, folder),
       offsetSec: null,
       syncScore: 0,
+      timecodeSec: await readTimecode(file.path),
     });
   }
   const master = chooseMaster(items);
   if (!master) return { items, master: null };
   master.offsetSec = 0;
   master.syncScore = 1;
-  const step = 0.04; // envelope frames (see multicam.util)
-  // Each file is lined up against something already lined up: first the master, then any other
+  master.drift = 0;
+  master.sync = { method: "sound", agreed: 1, tried: 1, refined: false };
+  // Each file is lined up against everything already lined up: first the master, then any other
   // synced file. That way a recorder that split a long take into several files still lines up
   // through a camera that ran across the split, and a second camera through the first.
-  const pending = items.filter((m) => m !== master && envelopes.has(m.path));
+  const priority = (m: FolderMedia) =>
+    m.role === "recorder" ? 0 : m.role === "talk" ? 1 : 2;
+  const pending = items
+    .filter((m) => m !== master && envelopes.has(m.path))
+    .sort((a, b) => priority(a) - priority(b));
   const synced: FolderMedia[] = [master];
   const total = pending.length;
   let progressed = true;
@@ -260,32 +283,50 @@ export async function analyzeShoot(
         `Lining up ${item.name}`,
         (total - pending.length) / Math.max(1, total),
       );
-      const envelope = envelopes.get(item.path)!;
-      // Up to two minutes from a tenth of the way in (past any slate or silence at the start).
-      const from = Math.floor(envelope.length * 0.1);
-      const length = Math.min(Math.round(120 / step), envelope.length - from);
-      if (length < 150) {
-        pending.splice(pending.indexOf(item), 1);
-        continue;
-      }
-      let best: { offset: number; score: number } | null = null;
-      for (const reference of synced) {
-        const { lag, score } = bestLag(
-          envelope.slice(from, from + length),
-          envelopes.get(reference.path)!,
+      // Timecode guess from any lined-up file that has timecode too (same day).
+      let prior: number | null = null;
+      if (item.timecodeSec != null) {
+        const withTc = synced.find(
+          (m) =>
+            m.timecodeSec != null &&
+            Math.abs(item.timecodeSec! - m.timecodeSec!) < 12 * 3600,
         );
-        if (!best || score > best.score)
-          best = {
-            offset: reference.offsetSec! + lag * step - from * step,
-            score,
-          };
+        if (withTc)
+          prior = masterTimeOf(withTc, item.timecodeSec - withTc.timecodeSec!);
       }
-      item.syncScore = Math.max(item.syncScore, best?.score ?? 0);
-      if (best && best.score >= MIN_SYNC_SCORE) {
-        item.offsetSec = best.offset;
-        synced.push(item);
-        pending.splice(pending.indexOf(item), 1);
-        progressed = true;
+      const result = syncItem(
+        envelopes.get(item.path)!,
+        synced.map((media) => ({ media, feature: envelopes.get(media.path)! })),
+        prior,
+      );
+      if (!result) continue;
+      item.offsetSec = result.offsetSec;
+      item.drift = result.drift;
+      item.syncScore = result.score;
+      item.sync = {
+        method: result.method,
+        agreed: result.agreed,
+        tried: result.tried,
+        refined: false,
+      };
+      synced.push(item);
+      pending.splice(pending.indexOf(item), 1);
+      progressed = true;
+    }
+  }
+  // Sub-frame accuracy: refine each on fine sound detail against the master (or what overlaps).
+  for (const [index, item] of synced.entries()) {
+    if (item === master || item.sync?.method !== "sound") continue;
+    onProgress(`Fine-tuning ${item.name}`, index / synced.length);
+    for (const reference of [
+      master,
+      ...synced.filter((m) => m !== item && m !== master),
+    ]) {
+      const refined = await refineOffset(item, reference).catch(() => null);
+      if (refined) {
+        item.offsetSec = refined.offsetSec;
+        item.sync = { ...item.sync, refined: true };
+        break;
       }
     }
   }
@@ -505,7 +546,7 @@ function soundFor(
     m.hasAudio &&
     m.offsetSec !== null &&
     m.offsetSec <= a + 0.05 &&
-    m.offsetSec + m.durationSec >= b - 0.05;
+    masterTimeOf(m, m.durationSec) >= b - 0.05;
   const recorders = items.filter((m) => m.role === "recorder" && covers(m));
   if (covers(master) && (master.role === "recorder" || !recorders.length))
     return master;
@@ -527,7 +568,7 @@ function camerasCovering(
       roles.includes(m.role) &&
       m.offsetSec !== null &&
       m.offsetSec <= a + 0.05 &&
-      m.offsetSec + m.durationSec >= b - 0.05,
+      masterTimeOf(m, m.durationSec) >= b - 0.05,
   );
 }
 
@@ -615,8 +656,8 @@ export function assembleTimeline(
     for (const shot of shots) {
       video.push({
         media: shot.camera,
-        inSec: shot.a - shot.camera.offsetSec!,
-        outSec: shot.b - shot.camera.offsetSec!,
+        inSec: fileTimeOf(shot.camera, shot.a),
+        outSec: fileTimeOf(shot.camera, shot.b),
         startSec: cursor + shot.a - a,
         label: part.title,
       });
@@ -626,8 +667,8 @@ export function assembleTimeline(
     if (sound)
       audio.push({
         media: sound,
-        inSec: a - sound.offsetSec!,
-        outSec: b - sound.offsetSec!,
+        inSec: fileTimeOf(sound, a),
+        outSec: fileTimeOf(sound, b),
         startSec: cursor,
         label: part.title,
       });
@@ -635,8 +676,8 @@ export function assembleTimeline(
       if (!shot.camera.hasAudio || shot.camera === sound) continue;
       scratch.push({
         media: shot.camera,
-        inSec: shot.a - shot.camera.offsetSec!,
-        outSec: shot.b - shot.camera.offsetSec!,
+        inSec: fileTimeOf(shot.camera, shot.a),
+        outSec: fileTimeOf(shot.camera, shot.b),
         startSec: cursor + shot.a - a,
         label: part.title,
       });
