@@ -1,3 +1,5 @@
+import { getClipperFormatDef } from "../shared/formats.util";
+import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import React, { useMemo } from "react";
 import { Box, Button, Checkbox, Flex, HStack, Text, VStack } from "@chakra-ui/react";
 import { Clapperboard, Minus } from "lucide-react";
@@ -31,6 +33,8 @@ interface ClipperRenderQueueSetupProps {
   onRender: () => void;
   exportCount?: number;
   onViewExports?: () => void;
+  /** Framing warnings per clip index (from the framing check). */
+  framingWarnings?: Map<number, string[]>;
 }
 
 export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = ({
@@ -47,6 +51,7 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
   onRender,
   exportCount = 0,
   onViewExports,
+  framingWarnings,
 }) => {
   const { theme, outlineButton } = useClipperUi();
 
@@ -205,6 +210,51 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
         </HStack>
       </VStack>
 
+      <HStack gap={4} flexWrap="wrap" fontSize="sm" color={theme.text.muted}>
+        <Text fontWeight="semibold" color={theme.text.primary}>
+          Captions
+        </Text>
+        {formats.enabledFormatIds.map((formatId) => {
+          const clean = formats.cleanCaptionFormatIds?.includes(formatId) ?? false;
+          return (
+            <label key={formatId} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={!clean}
+                onChange={(e) => {
+                  const current = new Set(formats.cleanCaptionFormatIds ?? []);
+                  if (e.target.checked) current.delete(formatId);
+                  else current.add(formatId);
+                  onChangeFormats({ cleanCaptionFormatIds: [...current] });
+                }}
+              />
+              Burn into {getClipperFormatDef(formatId)?.label ?? formatId}
+            </label>
+          );
+        })}
+        <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+          <input type="checkbox" checked={Boolean(formats.writeSrt)} onChange={(e) => onChangeFormats({ writeSrt: e.target.checked })} />
+          Also save an .srt file with each export
+        </label>
+      </HStack>
+
+      {framingWarnings && framingWarnings.size > 0 ? (
+        <HStack gap={3} p={3} borderRadius="lg" border="1px solid" borderColor={theme.status.warning} flexWrap="wrap">
+          <Text fontSize="sm" flex={1} minW="200px">
+            {framingWarnings.size} clip{framingWarnings.size === 1 ? " has" : "s have"} framing issues (faces cut off, nobody in
+            frame, or a shaky camera). Fix them in Preview with Check framing, or hold them back for now.
+          </Text>
+          <OutlinedActionButton
+            onClick={() => {
+              for (const clipIndex of framingWarnings.keys()) onSetAllFormatsForClip(clipIndex, false);
+            }}
+            disabled={isRendering}
+          >
+            Hold back flagged clips
+          </OutlinedActionButton>
+        </HStack>
+      ) : null}
+
       <VStack align="stretch" gap={2}>
         {clipPreviews.map((preview) => (
           <ClipperRenderQueueSetupRow
@@ -218,6 +268,7 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
             setCanvasRef={setCanvasRef}
             onToggleClipFormat={onToggleClipFormat}
             onSetAllFormatsForClip={onSetAllFormatsForClip}
+            framingWarnings={framingWarnings?.get(preview.clip.index)}
           />
         ))}
       </VStack>

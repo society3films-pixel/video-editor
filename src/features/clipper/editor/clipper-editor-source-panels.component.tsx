@@ -1,0 +1,621 @@
+import React from "react";
+import { Box, HStack, Text, VStack } from "@chakra-ui/react";
+import { ArrowUpDown, Columns2, Crosshair, Diamond, Maximize, Monitor, Eye, EyeOff, Plus, RotateCcw, ScissorsLineDashed, Sparkles, Square, Wand, X } from "lucide-react";
+import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
+import type { CaptionGroup } from "../lib/media/transcription-export.util";
+import { useClipperUi } from "../shared/use-clipper-ui.hook";
+import { clipperTheme } from "../shared/theme.util";
+import { captionGroupText, formatEditorTime } from "./clip-edit.util";
+import { countKeywords } from "./caption-keywords.util";
+import {
+  defaultScreenPanels,
+  isForcedSplit,
+  type ClipFramingKeyframe,
+  type ClipperFramingValue,
+  type ClipperSplitPanel,
+} from "../engine/render/framing-override.util";
+import { Section, SliderRow, fieldStyle } from "./clipper-editor-side-panel.component";
+
+function ChoiceButton({
+  selected,
+  onClick,
+  children,
+  title,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  title?: string;
+}) {
+  const { theme } = useClipperUi();
+  return (
+    <Box
+      as="button"
+      title={title}
+      flex={1}
+      display="flex"
+      alignItems="center"
+      justifyContent="center"
+      gap={1}
+      fontSize="xs"
+      py={1.5}
+      borderRadius="sm"
+      border="1px solid"
+      cursor="pointer"
+      borderColor={selected ? clipperTheme.accentGlow : theme.surface.hover}
+      bg={selected ? `rgba(${clipperTheme.accentTintRgb},0.2)` : "transparent"}
+      color={theme.text.primary}
+      onClick={onClick}
+    >
+      {children}
+    </Box>
+  );
+}
+
+// ---- Captions ---------------------------------------------------------------------------------
+
+interface CaptionsPanelProps {
+  groups: CaptionGroup[];
+  edited: boolean;
+  visible: boolean;
+  /** Clip-local playhead time, to highlight the line on screen. */
+  currentTime: number;
+  onToggleVisible: () => void;
+  onChangeText: (index: number, text: string) => void;
+  onSeek: (localTime: number) => void;
+  onReset: () => void;
+  onToggleKeyword: (groupIndex: number, wordIndex: number) => void;
+  onAutoKeywords: () => void;
+  onClearKeywords: () => void;
+}
+
+export const ClipperEditorCaptionsPanel: React.FC<CaptionsPanelProps> = ({
+  groups,
+  edited,
+  visible,
+  currentTime,
+  onToggleVisible,
+  onChangeText,
+  onSeek,
+  onReset,
+  onToggleKeyword,
+  onAutoKeywords,
+  onClearKeywords,
+}) => {
+  const { theme } = useClipperUi();
+  const keywordCount = countKeywords(groups);
+  return (
+    <Section title="Captions">
+      <HStack gap={2}>
+        <ChoiceButton selected={visible} onClick={() => !visible && onToggleVisible()}>
+          <Eye size={13} /> Show
+        </ChoiceButton>
+        <ChoiceButton selected={!visible} onClick={() => visible && onToggleVisible()}>
+          <EyeOff size={13} /> Hide
+        </ChoiceButton>
+      </HStack>
+      {groups.length === 0 ? (
+        <Text fontSize="xs" color={theme.text.muted}>
+          This clip has no caption lines.
+        </Text>
+      ) : (
+        <Text fontSize="xs" color={theme.text.muted}>
+          Edit a line to change its wording. Clear a line to remove it. Click the time to jump there.
+        </Text>
+      )}
+      {groups.length ? (
+        <VStack align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+          <Text fontSize="xs" fontWeight="semibold">
+            Keywords
+          </Text>
+          <Text fontSize="xs" color={theme.text.muted}>
+            Highlighted words stay in the caption style's highlight colour. Click the words under the current line to
+            toggle them.{keywordCount ? ` ${keywordCount} highlighted.` : ""}
+          </Text>
+          <HStack gap={2}>
+            <OutlinedActionButton h="28px" px={2} fontSize="xs" startIcon={<Wand size={13} />} onClick={onAutoKeywords}>
+              Pick automatically
+            </OutlinedActionButton>
+            {keywordCount ? (
+              <OutlinedActionButton h="28px" px={2} fontSize="xs" onClick={onClearKeywords}>
+                Clear
+              </OutlinedActionButton>
+            ) : null}
+          </HStack>
+        </VStack>
+      ) : null}
+      <VStack align="stretch" gap={1.5} opacity={visible ? 1 : 0.5}>
+        {groups.map((group, index) => {
+          const active = currentTime >= group.start && currentTime < group.end;
+          return (
+            <VStack key={`${index}-${group.start}`} align="stretch" gap={1}>
+              <HStack gap={2} align="center">
+                <Box
+                  as="button"
+                  onClick={() => onSeek(group.start + 0.01)}
+                  fontSize="10px"
+                  fontFamily="mono"
+                  minW="42px"
+                  textAlign="left"
+                  color={active ? clipperTheme.accentGlow : theme.text.muted}
+                  cursor="pointer"
+                  _hover={{ color: theme.text.primary }}
+                >
+                  {formatEditorTime(group.start)}
+                </Box>
+                <input
+                  value={captionGroupText(group)}
+                  onChange={(event) => onChangeText(index, event.target.value)}
+                  onFocus={() => onSeek(group.start + 0.01)}
+                  style={{
+                    ...fieldStyle,
+                    borderColor: active ? clipperTheme.accentGlow : "rgba(255,255,255,0.12)",
+                  }}
+                  aria-label={`Caption line ${index + 1}`}
+                />
+              </HStack>
+              {active || group.words.some((word) => word.emphasis) ? (
+                <HStack gap={1} flexWrap="wrap" pl="50px">
+                  {group.words.map((word, wordIndex) =>
+                    word.deleted ? null : (
+                      <Box
+                        key={wordIndex}
+                        as="button"
+                        title={word.emphasis ? "Remove highlight" : "Highlight this word"}
+                        onClick={() => onToggleKeyword(index, wordIndex)}
+                        fontSize="11px"
+                        px={1.5}
+                        py={0.5}
+                        borderRadius="sm"
+                        border="1px solid"
+                        cursor="pointer"
+                        borderColor={word.emphasis ? clipperTheme.accentGlow : theme.surface.hover}
+                        bg={word.emphasis ? `rgba(${clipperTheme.accentTintRgb},0.35)` : "transparent"}
+                        fontWeight={word.emphasis ? "bold" : "normal"}
+                      >
+                        {word.text}
+                      </Box>
+                    ),
+                  )}
+                </HStack>
+              ) : null}
+            </VStack>
+          );
+        })}
+      </VStack>
+      {edited ? (
+        <OutlinedActionButton justifyContent="center" startIcon={<RotateCcw size={14} />} onClick={onReset} h="32px" fontSize="xs">
+          Restore original captions
+        </OutlinedActionButton>
+      ) : null}
+    </Section>
+  );
+};
+
+// ---- Framing ----------------------------------------------------------------------------------
+
+export type SpeakerDetectStatus =
+  | { state: "idle" }
+  | { state: "running"; ratio: number }
+  | { state: "error"; message: string };
+
+interface FramingPanelProps {
+  shot: { index: number; start: number; end: number; count: number };
+  /** Framing at the playhead; undefined = AI framing. */
+  value: ClipperFramingValue | undefined;
+  keyframes: ClipFramingKeyframe[];
+  keyframeAtPlayhead: ClipFramingKeyframe | undefined;
+  /** The current shot starts at a shot change the user added (and can remove). */
+  userShotStart: boolean;
+  currentTime: number;
+  onChange: (value: ClipperFramingValue) => void;
+  onLock: () => void;
+  /** Switches the shot to a forced split screen (panels start from the AI's view). */
+  onForceSplit: () => void;
+  /** Landscape outputs put split panels side by side instead of stacked. */
+  sideBySide: boolean;
+  /** AI-tracked split: whether two people are tracked at the playhead. */
+  splitTrackedHere: boolean;
+  /** Speaker turns detected for this clip (0 = not detected yet). */
+  speakerTurns: number;
+  speakerStatus: SpeakerDetectStatus;
+  onDetectSpeakers: () => void;
+  onAddKeyframe: () => void;
+  onRemoveKeyframe: (id: string) => void;
+  onSeek: (localTime: number) => void;
+  onResetShot: () => void;
+  onApplyToAll: () => void;
+  onAddShotBoundary: () => void;
+  onRemoveShotBoundary: () => void;
+}
+
+const DEFAULT_VALUE: ClipperFramingValue = { mode: "auto", x: 0, y: 0, zoom: 1, singleShot: false };
+
+export const ClipperEditorFramingPanel: React.FC<FramingPanelProps> = ({
+  shot,
+  value,
+  keyframes,
+  keyframeAtPlayhead,
+  userShotStart,
+  currentTime,
+  onChange,
+  onLock,
+  onForceSplit,
+  sideBySide,
+  splitTrackedHere,
+  speakerTurns,
+  speakerStatus,
+  onDetectSpeakers,
+  onAddKeyframe,
+  onRemoveKeyframe,
+  onSeek,
+  onResetShot,
+  onApplyToAll,
+  onAddShotBoundary,
+  onRemoveShotBoundary,
+}) => {
+  const { theme } = useClipperUi();
+  const current = value ?? DEFAULT_VALUE;
+  const update = (patch: Partial<ClipperFramingValue>) => onChange({ ...current, ...patch });
+  const split = isForcedSplit(current);
+  const layout: "ai" | "single" | "split" | "fit" | "screen" = split
+    ? current.screen
+      ? "screen"
+      : "split"
+    : current.fit === "blur"
+      ? "fit"
+      : current.singleShot
+        ? "single"
+        : "ai";
+  const panelNames = sideBySide ? ["Left panel", "Right panel"] : ["Top panel", "Bottom panel"];
+  const updatePanel = (index: number, patch: Partial<ClipperSplitPanel>) =>
+    update({ split: current.split!.map((panel, i) => (i === index ? { ...panel, ...patch } : panel)) });
+  const animated = keyframes.length >= 2;
+  const smallButton = { h: "30px", fontSize: "xs", px: 2, justifyContent: "center" } as const;
+
+  return (
+    <VStack align="stretch" gap={3}>
+      <Section title={shot.count > 1 ? `Shot ${shot.index + 1} of ${shot.count}` : "Framing"}>
+        <Text fontSize="xs" color={theme.text.muted}>
+          {formatEditorTime(shot.start)} – {formatEditorTime(shot.end)} ·{" "}
+          {keyframes.length === 0
+            ? "AI framing"
+            : animated
+              ? `Camera moves between ${keyframes.length} keyframes`
+              : "Your framing for the whole shot"}
+        </Text>
+        <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
+          Layout
+        </Text>
+        <HStack gap={2}>
+          <ChoiceButton
+            selected={layout === "ai"}
+            onClick={() => layout !== "ai" && update({ singleShot: false, split: undefined, fit: undefined, screen: undefined })}
+            title="Let the AI choose between one shot and split screen"
+          >
+            <Wand size={13} /> AI decides
+          </ChoiceButton>
+          <ChoiceButton
+            selected={layout === "single"}
+            onClick={() => layout !== "single" && update({ singleShot: true, split: undefined, fit: undefined, screen: undefined })}
+            title="Always one shot, never split screen"
+          >
+            <Square size={13} /> One shot
+          </ChoiceButton>
+          <ChoiceButton
+            selected={layout === "split"}
+            onClick={() => layout !== "split" && onForceSplit()}
+            title="Always split screen, with two panels you position"
+          >
+            <Columns2 size={13} /> Split
+          </ChoiceButton>
+          <ChoiceButton
+            selected={layout === "fit"}
+            onClick={() => layout !== "fit" && update({ fit: "blur", split: undefined, screen: undefined, singleShot: false, mode: "auto", x: 0, y: 0, zoom: 1, slowZoom: undefined })}
+            title="Show the whole frame over a blurred copy, nothing cropped (good for wide shots)"
+          >
+            <Maximize size={13} /> Whole frame
+          </ChoiceButton>
+          <ChoiceButton
+            selected={layout === "screen"}
+            onClick={() =>
+              layout !== "screen" &&
+              update({ split: defaultScreenPanels(), screen: true, splitFollow: false, splitSwap: false, fit: undefined, singleShot: false })
+            }
+            title="Screen recording or slides shown whole, with the presenter's face in its own panel"
+          >
+            <Monitor size={13} /> Screen + face
+          </ChoiceButton>
+        </HStack>
+
+        {layout === "screen" ? (
+          <>
+            <Text fontSize="xs" color={theme.text.muted}>
+              The screen is shown uncropped so text stays readable; the AI keeps the biggest face framed in the other
+              panel.
+            </Text>
+            <SliderRow
+              label="Screen zoom"
+              value={current.split![0]!.zoom}
+              min={1}
+              max={4}
+              step={0.05}
+              display={`${Math.round(current.split![0]!.zoom * 100)}%`}
+              onChange={(zoom) => updatePanel(0, { zoom })}
+            />
+            {current.split![0]!.zoom > 1.01 ? (
+              <>
+                <SliderRow label="Screen left / right" value={current.split![0]!.x} min={0} max={1} step={0.005} display={`${Math.round(current.split![0]!.x * 100)}%`} onChange={(x) => updatePanel(0, { x })} />
+                <SliderRow label="Screen up / down" value={current.split![0]!.y} min={0} max={1} step={0.005} display={`${Math.round(current.split![0]!.y * 100)}%`} onChange={(y) => updatePanel(0, { y })} />
+              </>
+            ) : null}
+            <SliderRow
+              label="Face zoom"
+              value={current.split![1]!.zoom}
+              min={1}
+              max={6}
+              step={0.05}
+              display={`${Math.round(current.split![1]!.zoom * 100)}%`}
+              onChange={(zoom) => updatePanel(1, { zoom })}
+            />
+            <OutlinedActionButton {...smallButton} startIcon={<ArrowUpDown size={13} />} onClick={() => update({ splitSwap: !current.splitSwap })}>
+              {current.splitSwap ? "Put the screen first" : "Put the face first"}
+            </OutlinedActionButton>
+          </>
+        ) : split ? (
+          <>
+            <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
+              Panels
+            </Text>
+            <HStack gap={2}>
+              <ChoiceButton
+                selected={Boolean(current.splitFollow)}
+                onClick={() => !current.splitFollow && update({ splitFollow: true })}
+                title="Each panel follows one person (AI face tracking)"
+              >
+                <Sparkles size={13} /> AI follows people
+              </ChoiceButton>
+              <ChoiceButton
+                selected={!current.splitFollow}
+                onClick={() => current.splitFollow && update({ splitFollow: false })}
+                title="Each panel stays where you put it"
+              >
+                <Crosshair size={13} /> Manual
+              </ChoiceButton>
+            </HStack>
+            <Text fontSize="xs" color={current.splitFollow && !splitTrackedHere ? theme.status.danger : theme.text.muted}>
+              {current.splitFollow
+                ? splitTrackedHere
+                  ? `The AI keeps the ${sideBySide ? "left" : "top"} panel on one person and the other panel on the second. Drag inside a panel to nudge its framing.`
+                  : "Two people aren't detected at this moment, so the panels use their manual positions here."
+                : "Drag inside a panel to reposition it. Changes apply to this shot only."}
+            </Text>
+            {current.splitFollow ? (
+              <VStack align="stretch" gap={1}>
+                <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(current.splitEmphasis)}
+                    onChange={(e) => {
+                      update({ splitEmphasis: e.target.checked });
+                      if (e.target.checked && speakerTurns === 0 && speakerStatus.state !== "running") onDetectSpeakers();
+                    }}
+                    style={{ accentColor: clipperTheme.accent }}
+                  />
+                  Grow the panel of whoever's talking
+                </label>
+                {current.splitEmphasis || speakerStatus.state !== "idle" ? (
+                  <HStack gap={2} flexWrap="wrap">
+                    <Text fontSize="xs" color={speakerStatus.state === "error" ? theme.status.danger : theme.text.muted}>
+                      {speakerStatus.state === "running"
+                        ? `Watching who's talking… ${Math.round(speakerStatus.ratio * 100)}%`
+                        : speakerStatus.state === "error"
+                          ? speakerStatus.message
+                          : speakerTurns
+                            ? `${speakerTurns} speaker turn${speakerTurns === 1 ? "" : "s"} found from mouth movement.`
+                            : "Not checked yet."}
+                    </Text>
+                    {speakerStatus.state !== "running" ? (
+                      <OutlinedActionButton {...smallButton} onClick={onDetectSpeakers}>
+                        {speakerTurns ? "Check again" : "Find who's talking"}
+                      </OutlinedActionButton>
+                    ) : null}
+                  </HStack>
+                ) : null}
+              </VStack>
+            ) : null}
+            {current.split!.slice(0, 2).map((panel, index) => (
+              <VStack key={index} align="stretch" gap={1} p={2} borderRadius="md" bg="rgba(0,0,0,0.2)">
+                <Text fontSize="xs" fontWeight="semibold">
+                  {panelNames[index]}
+                  {current.splitFollow ? ` · ${(index === 0) !== Boolean(current.splitSwap) ? "left" : "right"} person` : ""}
+                </Text>
+                <SliderRow label="Zoom" value={panel.zoom} min={1} max={3} step={0.05} display={`${Math.round(panel.zoom * 100)}%`} onChange={(zoom) => updatePanel(index, { zoom })} />
+                {current.splitFollow ? (
+                  <>
+                    <SliderRow label="Nudge left / right" value={panel.dx ?? 0} min={-0.5} max={0.5} step={0.01} display={`${Math.round((panel.dx ?? 0) * 100)}`} onChange={(dx) => updatePanel(index, { dx })} />
+                    <SliderRow label="Nudge up / down" value={panel.dy ?? 0} min={-0.5} max={0.5} step={0.01} display={`${Math.round((panel.dy ?? 0) * 100)}`} onChange={(dy) => updatePanel(index, { dy })} />
+                  </>
+                ) : (
+                  <>
+                    <SliderRow label="Horizontal" value={panel.x} min={0} max={1} step={0.005} display={`${Math.round(panel.x * 100)}%`} onChange={(x) => updatePanel(index, { x })} />
+                    <SliderRow label="Vertical" value={panel.y} min={0} max={1} step={0.005} display={`${Math.round(panel.y * 100)}%`} onChange={(y) => updatePanel(index, { y })} />
+                  </>
+                )}
+              </VStack>
+            ))}
+            <OutlinedActionButton
+              {...smallButton}
+              startIcon={<ArrowUpDown size={13} />}
+              onClick={() =>
+                current.splitFollow
+                  ? update({ splitSwap: !current.splitSwap })
+                  : update({ split: [current.split![1]!, current.split![0]!] })
+              }
+            >
+              {current.splitFollow ? "Swap people" : "Swap panels"}
+            </OutlinedActionButton>
+          </>
+        ) : layout === "fit" ? (
+          <>
+            <Text fontSize="xs" color={theme.text.muted}>
+              The whole picture is shown, with a blurred copy filling the rest of the frame. Use Size to fill more
+              of the frame (the sides get cropped).
+            </Text>
+            <SliderRow
+              label="Size"
+              value={current.zoom}
+              min={1}
+              max={2}
+              step={0.05}
+              display={`${Math.round(current.zoom * 100)}%`}
+              onChange={(zoom) => update({ zoom })}
+            />
+          </>
+        ) : (
+          <>
+            <Text fontSize="xs" fontWeight="semibold" color={theme.text.muted}>
+              Camera
+            </Text>
+            <HStack gap={2}>
+              <ChoiceButton
+                selected={current.mode === "auto"}
+                onClick={() => current.mode !== "auto" && update({ mode: "auto", x: 0, y: 0, zoom: 1 })}
+                title="Follow the AI camera, optionally nudged"
+              >
+                <Sparkles size={13} /> Follow AI
+              </ChoiceButton>
+              <ChoiceButton
+                selected={current.mode === "fixed"}
+                onClick={() => current.mode !== "fixed" && onLock()}
+                title="Place the camera yourself"
+              >
+                <Crosshair size={13} /> Manual
+              </ChoiceButton>
+            </HStack>
+            <Text fontSize="xs" color={theme.text.muted}>
+              Drag the picture to reposition. Changes apply to this shot only; other shots keep their framing.
+            </Text>
+            <SliderRow
+              label="Zoom"
+              value={current.zoom}
+              min={1}
+              max={3}
+              step={0.05}
+              display={`${Math.round(current.zoom * 100)}%`}
+              onChange={(zoom) => update({ zoom })}
+            />
+            {current.mode === "fixed" ? (
+              <>
+                <SliderRow label="Horizontal" value={current.x} min={0} max={1} step={0.005} display={`${Math.round(current.x * 100)}%`} onChange={(x) => update({ x })} />
+                <SliderRow label="Vertical" value={current.y} min={0} max={1} step={0.005} display={`${Math.round(current.y * 100)}%`} onChange={(y) => update({ y })} />
+              </>
+            ) : (
+              <>
+                <SliderRow label="Nudge left / right" value={current.x} min={-1} max={1} step={0.01} display={`${Math.round(current.x * 100)}`} onChange={(x) => update({ x })} />
+                <SliderRow label="Nudge up / down" value={current.y} min={-1} max={1} step={0.01} display={`${Math.round(current.y * 100)}`} onChange={(y) => update({ y })} />
+              </>
+            )}
+            <SliderRow
+              label="Slow zoom over the shot"
+              value={current.slowZoom ?? 0}
+              min={0}
+              max={0.3}
+              step={0.01}
+              display={current.slowZoom ? `+${Math.round(current.slowZoom * 100)}%` : "Off"}
+              onChange={(slowZoom) => update({ slowZoom: slowZoom > 0.005 ? slowZoom : undefined })}
+            />
+          </>
+        )}
+        <HStack gap={2}>
+          <OutlinedActionButton flex={1} {...smallButton} startIcon={<RotateCcw size={13} />} onClick={onResetShot} disabled={keyframes.length === 0}>
+            Back to AI
+          </OutlinedActionButton>
+          {shot.count > 1 ? (
+            <OutlinedActionButton flex={1} {...smallButton} onClick={onApplyToAll} disabled={keyframes.length === 0}>
+              Use for all shots
+            </OutlinedActionButton>
+          ) : null}
+        </HStack>
+      </Section>
+
+      <Section title="Camera moves">
+        <Text fontSize="xs" color={theme.text.muted}>
+          To make the camera move, add a keyframe, go to another moment in the shot and change the framing.
+          The camera glides between keyframes.
+        </Text>
+        <HStack gap={2}>
+          <OutlinedActionButton
+            flex={1}
+            {...smallButton}
+            startIcon={<Plus size={13} />}
+            onClick={onAddKeyframe}
+            disabled={Boolean(keyframeAtPlayhead)}
+          >
+            Add keyframe here
+          </OutlinedActionButton>
+          {keyframeAtPlayhead ? (
+            <OutlinedActionButton flex={1} {...smallButton} tone="danger" onClick={() => onRemoveKeyframe(keyframeAtPlayhead.id)}>
+              Remove keyframe
+            </OutlinedActionButton>
+          ) : null}
+        </HStack>
+        {keyframes.length > 0 ? (
+          <VStack align="stretch" gap={1}>
+            {keyframes.map((keyframe, index) => {
+              const active = Math.abs(keyframe.t - currentTime) <= 0.08;
+              return (
+                <HStack
+                  key={keyframe.id}
+                  gap={2}
+                  px={2}
+                  py={1}
+                  borderRadius="sm"
+                  bg={active ? `rgba(${clipperTheme.accentTintRgb},0.18)` : "transparent"}
+                >
+                  <Box as="button" display="flex" alignItems="center" gap={2} flex={1} cursor="pointer" onClick={() => onSeek(keyframe.t)}>
+                    <Diamond size={11} fill={active ? clipperTheme.accentGlow : "none"} color={clipperTheme.accentGlow} />
+                    <Text fontSize="xs" fontFamily="mono">{formatEditorTime(keyframe.t)}</Text>
+                    <Text fontSize="xs" color={theme.text.muted}>
+                      {isForcedSplit(keyframe)
+                        ? keyframe.splitFollow
+                          ? "Split · AI follows"
+                          : "Split · manual"
+                        : `${keyframe.mode === "fixed" ? "Manual" : "Follow AI"} · ${Math.round(keyframe.zoom * 100)}%`}
+                    </Text>
+                  </Box>
+                  <Box
+                    as="button"
+                    aria-label={`Remove keyframe ${index + 1}`}
+                    color={theme.text.muted}
+                    _hover={{ color: theme.status.danger }}
+                    cursor="pointer"
+                    onClick={() => onRemoveKeyframe(keyframe.id)}
+                  >
+                    <X size={13} />
+                  </Box>
+                </HStack>
+              );
+            })}
+          </VStack>
+        ) : null}
+      </Section>
+
+      <Section title="Shot changes">
+        <Text fontSize="xs" color={theme.text.muted}>
+          Shots are found automatically. If the AI missed a cut, add one at the playhead so each side can be framed on its own.
+        </Text>
+        <HStack gap={2}>
+          <OutlinedActionButton flex={1} {...smallButton} startIcon={<ScissorsLineDashed size={13} />} onClick={onAddShotBoundary}>
+            Add shot change here
+          </OutlinedActionButton>
+          {userShotStart ? (
+            <OutlinedActionButton flex={1} {...smallButton} onClick={onRemoveShotBoundary}>
+              Remove this shot change
+            </OutlinedActionButton>
+          ) : null}
+        </HStack>
+      </Section>
+    </VStack>
+  );
+};

@@ -1,5 +1,8 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Box, Center, Text } from "@chakra-ui/react";
+import { checkClipFraming, FRAMING_ISSUE_LABEL } from "../editor/framing-check.util";
+import { getClipperFormatDef } from "../shared/formats.util";
+import { useWatchFolderAutomation } from "../hooks/use-watch-folder-automation.hook";
 import { ClipperLayout } from "../components/clipper-layout.component";
 import { ClipperExportsView } from "../components/clipper-exports-view.component";
 import { ClipperRenderQueue } from "../components/clipper-render-queue.component";
@@ -19,12 +22,15 @@ export type { ClipperSessionViewProps } from "../shared/clipper-session-view.typ
 export function ClipperSessionView({ project, token, loaded }: ClipperSessionViewProps) {
   const { theme, errorPanel } = useClipperUi();
   const session = useClipperSessionView({ project, token, loaded });
+  useWatchFolderAutomation(project.id, session);
   const {
     state,
     settings,
     updateSettings,
     confirmRange,
     refreshExportHistory,
+    getClipEditorSource,
+    saveClipFramingTrack,
     reset,
     sourceUrl,
     rangeLocked,
@@ -42,6 +48,20 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
     goToExports,
     stopRender,
   } = session;
+  // Framing check for the render queue: warnings only, in the vertical format (the one most clips are made for).
+  const framingWarnings = useMemo(() => {
+    const warnings = new Map<number, string[]>();
+    if (!visibility.showQueueSetup) return warnings;
+    const formatId = getClipperFormatDef("vertical-short")?.id ?? settings.formats.enabledFormatIds[0];
+    if (!formatId) return warnings;
+    for (const preview of state.clipPreviews) {
+      const source = session.getClipEditorSourceForClip(preview.clip.index, formatId);
+      if (!source) continue;
+      const issues = checkClipFraming(source).filter((issue) => issue.severity === "warning");
+      if (issues.length) warnings.set(preview.clip.index, issues.map((issue) => `Shot ${issue.shotIndex + 1}: ${FRAMING_ISSUE_LABEL[issue.kind]}`));
+    }
+    return warnings;
+  }, [state.clipPreviews, visibility.showQueueSetup, session.clipFramingRevision]);
 
   return (
     <ClipperLayout
@@ -114,6 +134,7 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
           }
           exportCount={exportCount}
           onViewExports={goToExports}
+          framingWarnings={framingWarnings}
         />
         </>
       )}
@@ -151,6 +172,7 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
           sourceFileName={state.sourceFileName}
           projectId={project.id}
           onRefreshHistory={refreshExportHistory}
+          editorBridge={{ getSource: getClipEditorSource, saveFraming: saveClipFramingTrack }}
         />
       )}
 

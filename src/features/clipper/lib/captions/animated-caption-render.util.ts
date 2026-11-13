@@ -999,6 +999,35 @@ function drawPodcastCaption(
   }
 }
 
+/** Hue in degrees of a #rrggbb colour, or null for greys and other formats. */
+function colorHue(color: string): number | null {
+  const match = /^#([0-9a-f]{6})$/i.exec(color.trim());
+  if (!match) return null;
+  const value = parseInt(match[1]!, 16);
+  const [r, g, b] = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map((v) => v / 255) as [number, number, number];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max - min < 0.15) return null;
+  const d = max - min;
+  const hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (hue * 60 + 360) % 360;
+}
+
+const KEYWORD_COLORS = ["#ffd400", "#3ee07a", "#ff4d6d", "#38c6ff"];
+
+/** Keyword colour: a bright colour clearly different from the spoken-word highlight. */
+function keywordColor(preset: CaptionPresetDefinition): string {
+  const activeHue = colorHue(preset.activeTextColor !== preset.textColor ? preset.activeTextColor : preset.activeColor);
+  if (activeHue === null) return KEYWORD_COLORS[0]!;
+  return (
+    KEYWORD_COLORS.find((color) => {
+      const hue = colorHue(color)!;
+      const distance = Math.abs(hue - activeHue);
+      return Math.min(distance, 360 - distance) >= 60;
+    }) ?? KEYWORD_COLORS[0]!
+  );
+}
+
 function drawCaptionWordBlock(
   ctx: CaptionContext,
   group: CaptionGroup,
@@ -1025,6 +1054,9 @@ function drawCaptionWordBlock(
     drawPodcastCaption(ctx, group, timestamp, width, height, preset);
     return;
   }
+  const basePreset = preset;
+  // Keywords the user (or AI) marked stay in the highlight colour the whole time.
+  const keywordPreset: CaptionPresetDefinition = { ...preset, textColor: keywordColor(preset) };
   ctx.save();
   try {
     const layout = getCaptionLayout(ctx, group.words, width, height, preset);
@@ -1085,6 +1117,7 @@ function drawCaptionWordBlock(
       baseline: number,
     ): void => {
       const word = group.words[placement.index]!;
+      const preset = word.emphasis ? keywordPreset : basePreset;
       if (preset.renderer === "karaoke") {
         drawKaraokeWord(
           ctx,
@@ -1129,9 +1162,34 @@ function drawCaptionWordBlock(
       drawWordsPass(false);
       drawWordsPass(true);
     }
+    drawGroupEmoji(ctx, group, layout, width, timestamp);
   } finally {
     ctx.restore();
   }
+}
+
+/**
+ * The line's emoji (the first word that has one) above the caption block: pops in when its word
+ * is spoken, then bobs gently while the line is on screen.
+ */
+function drawGroupEmoji(ctx: CaptionContext, group: CaptionGroup, layout: CaptionLayout, width: number, timestamp: number): void {
+  const word = group.words.find((w) => w.emoji && !w.deleted);
+  if (!word?.emoji) return;
+  const since = timestamp - Math.max(group.start, word.start - 0.15);
+  if (since < 0) return;
+  const pop = Math.min(1, since / 0.22);
+  const scale = pop < 1 ? easeOutBack(pop) : 1;
+  const bob = Math.sin(since * 4) * layout.fontPx * 0.05;
+  const size = layout.fontPx * 1.5;
+  ctx.save();
+  ctx.globalAlpha *= Math.min(1, pop * 1.5);
+  ctx.translate(width / 2, layout.top - size * 0.65 + bob);
+  ctx.scale(scale, scale);
+  ctx.font = `${Math.round(size)}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(word.emoji, 0, 0);
+  ctx.restore();
 }
 
 export function drawPhraseAnimatedCaption(

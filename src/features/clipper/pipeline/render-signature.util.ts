@@ -5,10 +5,11 @@ import {
   layoutRegionsCacheKey,
   type ClipperSession,
 } from "./session.util";
+import { clipFramingSignature } from "./clip-framing.util";
 
 type RenderSignatureSession = Pick<
   ClipperSession,
-  "disabledCollageRegionIds" | "smartCropAnalysis"
+  "disabledCollageRegionIds" | "smartCropAnalysis" | "clipFraming"
 >;
 
 /**
@@ -53,6 +54,13 @@ export function computeClipRenderSignature(
         : clip.captionGroups,
       collageRegionCacheKey(session.disabledCollageRegionIds ?? []),
       layoutRegionsCacheKey(session.smartCropAnalysis),
+      ...framingSignaturePart(session, clip),
     ]),
   );
+}
+
+/** Empty for clips without user framing, so their existing signatures stay valid. */
+function framingSignaturePart(session: RenderSignatureSession, clip: ClipperGeneratedClip): unknown[] {
+  const signature = clipFramingSignature(session.clipFraming, clip);
+  return signature === null ? [] : [signature];
 }

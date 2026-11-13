@@ -1,3 +1,5 @@
+import type { CaptionGroup } from "../../lib/media/transcription-export.util";
+import { captionGroupsToSrt } from "../../lib/captions/srt.util";
 import { CLIPPER_FORMAT_DEFS, type ClipperFormatDef } from "../../shared/formats.util";
 import type { ClipperFormatResult } from "../../shared/state.util";
 import { resolveClipperOutputSize } from "../../engine/render/frame-draw.util";
@@ -38,6 +40,23 @@ export interface RenderClipJobInput {
   filenameTemplate: string;
   /** Render-input fingerprint stored with each export (see render-signature.util). */
   renderSignature?: string;
+}
+
+/** `<export>.srt` next to the export, from the clip's caption lines (clip-local = export time). */
+async function writeCaptionSidecar(projectId: string, exportFileName: string, groups: CaptionGroup[]): Promise<void> {
+  const srt = captionGroupsToSrt(groups);
+  if (!srt) return;
+  const sidecar = await createClipperExportSink(projectId, exportFileName.replace(/\.mp4$/i, "") + ".srt");
+  if (!sidecar) return;
+  try {
+    const writer = sidecar.writable.getWriter();
+    await writer.write({ type: "write", data: new TextEncoder().encode(srt), position: 0 });
+    await writer.close();
+    await sidecar.finalize();
+  } catch (error) {
+    await sidecar.abort().catch(() => {});
+    throw error;
+  }
 }
 
 function trackPreviewUrl(previewUrl: string, previewUrls: string[]): void {
@@ -90,7 +109,14 @@ async function renderFormatToResult(
     );
     sink = await createClipperExportSink(input.projectId, fileName);
 
-    const encodeResult = await renderClipperFormat(rangeFile, formatDef, frameContext, {
+    // Formats set to "no burned-in captions" render clean (an .srt can carry the captions).
+    const formatContext = frameContext.settings.formats.cleanCaptionFormatIds?.includes(formatDef.id)
+      ? {
+          ...frameContext,
+          settings: { ...frameContext.settings, captions: { ...frameContext.settings.captions, enabled: false } },
+        }
+      : frameContext;
+    const encodeResult = await renderClipperFormat(rangeFile, formatDef, formatContext, {
       signal: options.signal,
       clipWindow,
       outputSink: sink?.writable,
@@ -100,6 +126,11 @@ async function renderFormatToResult(
 
     if (encodeResult.kind === "disk-encoded" && sink) {
       const disk = await sink.finalize();
+      if (frameContext.settings.formats.writeSrt && frameContext.captionGroups.length) {
+        await writeCaptionSidecar(input.projectId, sink.fileName, frameContext.captionGroups).catch((error) =>
+          console.warn("[render] Could not write the captions file:", error),
+        );
+      }
       trackPreviewUrl(disk.previewUrl, previewUrls);
       const exportedAtIso = exportedAt.toISOString();
       const result: ClipperFormatResult = {

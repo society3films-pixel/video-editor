@@ -2,7 +2,10 @@ import React, { useCallback, useEffect } from "react";
 import { VStack } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
 import type { ClipperFormatResult } from "../shared/state.util";
+import type { ClipEditorBridge } from "../editor/clip-editor-source.util";
 import { ClipperExportHistoryList } from "./clipper-export-history-list.component";
+import { ClipperExportsAiTools } from "./clipper-exports-ai-tools.component";
+import { ClipperBatchEdit } from "./clipper-batch-edit.component";
 import { ClipperExportsScreenHeader } from "./clipper-exports-screen-header.component";
 import { openClipperExportsDir } from "../persistence/export-files.util";
 
@@ -11,6 +14,7 @@ interface ClipperExportsViewProps {
   sourceFileName: string | null;
   projectId: string;
   onRefreshHistory: () => void;
+  editorBridge?: ClipEditorBridge;
 }
 
 export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
@@ -18,6 +22,7 @@ export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
   sourceFileName,
   projectId,
   onRefreshHistory,
+  editorBridge,
 }) => {
   const navigate = useNavigate();
   const totalExports = exportHistory.length;
@@ -47,7 +52,18 @@ export const ClipperExportsView: React.FC<ClipperExportsViewProps> = ({
         onGoToPublish={handleGoToPublish}
       />
 
-      <ClipperExportHistoryList exports={exportHistory} projectId={projectId} />
+      {exportHistory.length > 0 ? (
+        <ClipperExportsAiTools exports={exportHistory} onChanged={onRefreshHistory}>
+          <ClipperBatchEdit projectId={projectId} exports={exportHistory} bridge={editorBridge} onChanged={onRefreshHistory} />
+        </ClipperExportsAiTools>
+      ) : null}
+
+      <ClipperExportHistoryList
+        exports={exportHistory}
+        projectId={projectId}
+        onExportEdited={onRefreshHistory}
+        editorBridge={editorBridge}
+      />
     </VStack>
   );
 };

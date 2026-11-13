@@ -8,6 +8,14 @@ import { useClipperPipelineTranscript } from "./use-clipper-pipeline-transcript.
 import { useClipperPipelineWorkflow } from "./use-clipper-pipeline-workflow.hook";
 import { useClipperResume } from "../use-clipper-resume.hook";
 import { buildFrameContext, buildRangeFrameContext } from "../../pipeline/frame-context.util";
+import { resolveClipEditorSource, resolveClipEditorSourceForClip } from "../../editor/clip-editor-source.util";
+import { clipFramingKey } from "../../pipeline/clip-framing.util";
+import { getActiveClips } from "../../pipeline/session.util";
+import { findClipByIndex, type ClipperGeneratedClip } from "../../engine/segmentation";
+import { isFramingTrackEmpty, type ClipFramingTrack } from "../../engine/render/framing-override.util";
+import { saveClipFraming } from "../../persistence/clipper-clips-api.util";
+import { appToast } from "../../../../shared/utils/toast.service";
+import type { ClipperFormatResult } from "../../shared/state.util";
 import type { RangeFrameContextGetter } from "../../engine/types/render.types";
 import { INITIAL_PIPELINE_STATE } from "./clipper-pipeline.types";
 import type { UseClipperPipelineOptions } from "./clipper-pipeline.types";
@@ -25,6 +33,7 @@ export function useClipperPipeline({ project, token, loaded }: UseClipperPipelin
     setActiveClipIndex,
   } = core;
   const { sessionRef, activeClipIndexRef, metadataRef } = refs;
+  const { setClipFramingRevision } = core;
 
   const workflow = useClipperPipelineWorkflow(core, project, token);
   const clips = useClipperPipelineClips(core);
@@ -41,6 +50,27 @@ export function useClipperPipeline({ project, token, loaded }: UseClipperPipelin
       return session ? buildRangeFrameContext(session, settings, range) : null;
     },
     [sessionRef, settings],
+  );
+
+  /** Saves a clip's framing to the project; Preview and every later render use it. */
+  const saveClipFramingTrack = useCallback(
+    async (clip: ClipperGeneratedClip, track: ClipFramingTrack) => {
+      const session = sessionRef.current;
+      if (!session) return;
+      const key = clipFramingKey(clip);
+      const next = { ...(session.clipFraming ?? {}) };
+      if (isFramingTrackEmpty(track)) delete next[key];
+      else next[key] = track;
+      session.clipFraming = next;
+      setClipFramingRevision((value) => value + 1);
+      try {
+        await saveClipFraming(project.id, next);
+      } catch (error) {
+        appToast.error("Couldn't save framing", error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    },
+    [project.id, sessionRef, setClipFramingRevision],
   );
 
   /** Re-arms the resume effect after a phase failed, so it restarts that phase. */
@@ -106,6 +136,19 @@ export function useClipperPipeline({ project, token, loaded }: UseClipperPipelin
       );
     },
     getRangeFrameContext,
+    /** Source video + render context for re-rendering an export in the clip editor. */
+    getClipEditorSource: (result: ClipperFormatResult) =>
+      resolveClipEditorSource(sessionRef.current, settings, result),
+    /** Source + render context for a clip (no export yet), previewed in `formatId`. */
+    /** The trimmed range video (for sound analysis in Preview), once prepared. */
+    getRangeFile: (): File | null => sessionRef.current?.rangeTrimmedFile ?? null,
+    getClipEditorSourceForClip: (clipIndex: number, formatId: string) => {
+      const session = sessionRef.current;
+      const clip = session ? findClipByIndex(getActiveClips(session), clipIndex) : undefined;
+      return session && clip ? resolveClipEditorSourceForClip(session, settings, clip, formatId) : null;
+    },
+    saveClipFramingTrack,
+    clipFramingRevision: core.clipFramingRevision,
     sourceUrl: sessionRef.current?.sourceUrl ?? null,
     rangeLocked,
     disabledCollageRegionIds: clips.disabledCollageRegionIds,

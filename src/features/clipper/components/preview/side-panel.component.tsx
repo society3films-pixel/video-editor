@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, HStack } from "@chakra-ui/react";
-import { ExternalLink, ListOrdered } from "lucide-react";
+import { Clapperboard, Crop, ExternalLink, ListOrdered, ScanFace } from "lucide-react";
 import {
   OutlinedActionButton,
   getOutlinedActionSurfaceProps,
@@ -40,6 +40,10 @@ export function ClipperPreviewSidePanel({
   onClipSourceModeChange,
   onOpenInStudio,
   openingInStudio = false,
+  onFixFraming,
+  onEditClip,
+  onCheckFraming,
+  getRangeFile,
 }: ClipperPreviewSidePanelProps) {
   const listPreviews = activeClipPreviewsForMode(
     clipSourceMode,
@@ -55,6 +59,20 @@ export function ClipperPreviewSidePanel({
     const active = listPreviews.find((p) => p.clip.index === activeClipIndex);
     const clipIndex = active?.clip.index ?? listPreviews[0]!.clip.index;
     onOpenInStudio(clipIndex);
+  };
+
+  const handleEditClip = () => {
+    if (!onEditClip || listPreviews.length === 0) return;
+    const active = listPreviews.find((p) => p.clip.index === activeClipIndex);
+    pausePreview();
+    onEditClip(active?.clip.index ?? listPreviews[0]!.clip.index);
+  };
+
+  const handleFixFraming = () => {
+    if (!onFixFraming || listPreviews.length === 0) return;
+    const active = listPreviews.find((p) => p.clip.index === activeClipIndex);
+    pausePreview();
+    onFixFraming(active?.clip.index ?? listPreviews[0]!.clip.index);
   };
 
   return (
@@ -99,6 +117,48 @@ export function ClipperPreviewSidePanel({
           >
             Go to render queue
           </OutlinedActionButton>
+
+          {onEditClip ? (
+            <OutlinedActionButton
+              startIcon={<Clapperboard size={16} />}
+              onClick={handleEditClip}
+              disabled={listPreviews.length === 0}
+              title="Edit the active clip: cuts, captions, music, B-roll, color, framing. Saving renders it."
+              flexShrink={0}
+              {...TOOLBAR_ACTION_BUTTON_PROPS}
+            >
+              Edit clip
+            </OutlinedActionButton>
+          ) : null}
+
+          {onFixFraming && !onEditClip ? (
+            <OutlinedActionButton
+              startIcon={<Crop size={16} />}
+              onClick={handleFixFraming}
+              disabled={listPreviews.length === 0}
+              title="Fix the AI framing of the active clip, shot by shot"
+              flexShrink={0}
+              {...TOOLBAR_ACTION_BUTTON_PROPS}
+            >
+              Fix framing
+            </OutlinedActionButton>
+          ) : null}
+
+          {onCheckFraming ? (
+            <OutlinedActionButton
+              startIcon={<ScanFace size={16} />}
+              onClick={() => {
+                pausePreview();
+                onCheckFraming(listPreviews.map((preview) => preview.clip.index));
+              }}
+              disabled={listPreviews.length === 0}
+              flexShrink={0}
+              title="Finds shots where faces are cut off, someone is out of frame or the camera is shaky"
+              {...TOOLBAR_ACTION_BUTTON_PROPS}
+            >
+              Check framing
+            </OutlinedActionButton>
+          ) : null}
 
           {onOpenInStudio ? (
             <OutlinedActionButton
@@ -175,6 +235,7 @@ export function ClipperPreviewSidePanel({
           onResetAutoParts={onResetAutoParts}
           autoPartsResegmenting={autoPartsResegmenting}
           rangeTrimmedVideoUrl={state.rangeTrimmedVideoUrl}
+          getRangeFile={getRangeFile}
           rangeDurationSec={state.clipDuration ?? 0}
           getRangeFrameContext={getRangeFrameContext}
           onManualEditorOpen={pausePreview}

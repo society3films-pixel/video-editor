@@ -1,3 +1,4 @@
+import type { CaptionStyleCustom } from "../lib/captions/caption-presets.util";
 import {
   DEFAULT_CAPTION_PRESET_ID,
   normalizeCaptionPresetId,
@@ -48,6 +49,8 @@ export interface ClipperCaptionSettings {
   position: ClipperCaptionPosition;
   size: ClipperCaptionSize;
   wordsPerGroup: number;
+  /** Designer overrides on top of the preset (per clip, from the editor). */
+  custom?: CaptionStyleCustom;
 }
 
 export interface ClipperFormatSettings {
@@ -58,6 +61,10 @@ export interface ClipperFormatSettings {
   filenameTemplate: string;
   /** Render queue leaves out formats already exported from identical render inputs. */
   skipExisting: boolean;
+  /** Formats rendered without burned-in captions (e.g. YouTube, which shows its own). */
+  cleanCaptionFormatIds?: string[];
+  /** Also save each export's captions as an .srt file next to it. */
+  writeSrt?: boolean;
 }
 
 export interface ClipperAudioSettings {
