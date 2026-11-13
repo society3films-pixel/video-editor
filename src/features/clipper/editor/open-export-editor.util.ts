@@ -23,10 +23,24 @@ export async function resolveExportEditorTarget(
   bridge: ClipEditorBridge | undefined,
 ): Promise<ExportEditorTarget> {
   const record = await fetchExportEdit(opened.id).catch(() => null);
-  const base = record ? allExports.find((item) => item.id === record.baseExportId && !item.isMissing) : undefined;
+  // Edits started in Preview have no base export: they render from the source video (a
+  // "source:" base), so the edit is never applied twice on top of the edited file.
+  const sourceBorn = record?.baseExportId.startsWith("source:")
+    ? { ...opened, id: record.baseExportId, file: undefined, blob: undefined, renderSignature: undefined }
+    : undefined;
+  const base = sourceBorn ?? (record ? allExports.find((item) => item.id === record.baseExportId && !item.isMissing) : undefined);
   const source = bridge?.getSource(base ?? opened) ?? null;
 
   if (!record) return { base: opened, opened, source, savedEdit: null };
+  if (sourceBorn && !source) {
+    return {
+      base: opened,
+      opened,
+      source,
+      savedEdit: null,
+      warning: "This edit was made from Preview and needs the project's source video, which isn't loaded; this opens the edited video as it is.",
+    };
+  }
 
   const duration = source?.duration ?? Math.max(0, (opened.clipEndSec ?? 0) - (opened.clipStartSec ?? 0));
   const savedEdit = duration > 0 ? fromPersistedClipEdit(record.edit, duration) : null;

@@ -61,7 +61,7 @@ import {
   splitPanelsFromAi,
 } from "./clip-editor-preview.util";
 import { ClipperEditorTimeline } from "./clipper-editor-timeline.component";
-import { ClipperEditorSidePanel, Section } from "./clipper-editor-side-panel.component";
+import { ClipperEditorSidePanel, Section, SectionFilterContext } from "./clipper-editor-side-panel.component";
 import { ClipperEditorCaptionsPanel, ClipperEditorFramingPanel, type SpeakerDetectStatus } from "./clipper-editor-source-panels.component";
 import { resolveSourceFile, saveEditedClipperExport } from "./save-edited-export.util";
 import {
@@ -121,6 +121,8 @@ interface ClipperVideoEditorProps {
   onClose: () => void;
   /** Called after the edited copy has been written and registered. */
   onSaved: () => void;
+  /** Tab to open on (e.g. Framing from a framing report). */
+  initialTab?: "edit" | "words" | "framing";
 }
 
 /** Text edits within this window collapse into one undo step. */
@@ -128,7 +130,7 @@ const HISTORY_COALESCE_MS = 600;
 const HISTORY_LIMIT = 100;
 const DRAG_THRESHOLD_PX = 4;
 
-type PanelTab = "edit" | "text" | "ai" | "captions" | "framing";
+type PanelTab = "edit" | "words" | "framing";
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -154,8 +156,11 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   source = null,
   onClose,
   onSaved,
+  initialTab,
 }) => {
   const clipMode = !result;
+  /** Opened from Preview (no export yet): saving renders straight from the source video. */
+  const fromSource = Boolean(result?.id.startsWith("source:"));
   const { theme, scrollbarCss } = useClipperUi();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -183,7 +188,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<PanelTab>(clipMode ? "framing" : "edit");
+  const [tab, setTab] = useState<PanelTab>(clipMode ? "framing" : (initialTab ?? "edit"));
+  const [toolFilter, setToolFilter] = useState("");
   const [autoEditOpen, setAutoEditOpen] = useState(false);
   const [autoEditRunning, setAutoEditRunning] = useState(false);
   const [autoEditOptions, setAutoEditOptions] = useState<AutoEditOptions>(DEFAULT_AUTO_EDIT_OPTIONS);
@@ -864,7 +870,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
         if (issues.some((issue) => issue.severity === "warning")) warnings.push(def.label);
         // A format without an export yet is rendered straight from the source.
         const base: ClipperFormatResult =
-          formatId === result.formatId ? result : { ...result, id: `format-${formatId}`, formatId, label: def.label, platform: def.platform, renderSignature: undefined, file: undefined, blob: undefined };
+          formatId === result.formatId ? result : { ...result, id: `source:${result.clipIndex}:${formatId}`, formatId, label: def.label, platform: def.platform, renderSignature: undefined, file: undefined, blob: undefined };
         try {
           await saveEditedClipperExport(projectId, base, current, duration, {
             signal: controller.signal,
@@ -916,7 +922,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
           });
         }
       }
-      if (clipMode) {
+      if (clipMode || (fromSource && !editChanged)) {
         void deleteDraft(draftKeyValue);
         appToast.success("Framing saved", "Preview, the render queue and every format now use it.");
         onSaved();
@@ -927,7 +933,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       const staleExport = Boolean(
         source && result!.renderSignature && result!.renderSignature !== source.renderSignature,
       );
-      const needsSourceRender = Boolean(source) && (clipEditChangesCaptions(current) || framingChanged || staleExport);
+      const needsSourceRender = fromSource || (Boolean(source) && (clipEditChangesCaptions(current) || framingChanged || staleExport));
       const outcome = await saveEditedClipperExport(projectId, result!, current, duration, {
         signal: controller.signal,
         onProgress: setSaveProgress,
@@ -955,7 +961,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
       abortRef.current = null;
       setSaving(false);
     }
-  }, [clipMode, duration, framingChanged, onClose, onSaveFraming, onSaved, openedResult, projectId, result, saving, source]);
+  }, [clipMode, duration, editChanged, framingChanged, fromSource, onClose, onSaveFraming, onSaved, openedResult, projectId, result, saving, source]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -1026,9 +1032,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     ? [{ id: "framing", label: "Framing" }]
     : [
         { id: "edit", label: "Edit" },
-        { id: "text", label: "Text" },
-        { id: "ai", label: "AI" },
-        { id: "captions", label: "Captions" },
+        { id: "words", label: "Words" },
         { id: "framing", label: "Framing" },
       ];
   const title = clipMode
@@ -1036,7 +1040,9 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
     : `Edit clip ${(titleResult?.clipIndex ?? 0) + 1} · ${titleResult?.label ?? ""}${isEditedVersion ? " (edited)" : ""}`;
   const subtitle = clipMode
     ? "Framing is saved to this clip and used by Preview, the render queue and every format."
-    : isEditedVersion
+    : fromSource
+      ? "Saving renders this clip as an export (framing is also saved to the clip). Nothing is overwritten."
+      : isEditedVersion
       ? "Continuing your saved edit. Saving makes a new export; earlier versions stay."
       : "Saves a new export. The original stays as it is. Framing changes are saved to the clip.";
   const hasCuts = (edit?.segments.length ?? 0) !== 1 || edit?.segments[0]?.start !== 0 || edit?.segments[0]?.end !== duration;
@@ -1336,8 +1342,30 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               </Box>
             ))}
           </HStack>
+          {tab !== "framing" ? (
+            <Box px={4} pt={3} flexShrink={0}>
+              <input
+                value={toolFilter}
+                onChange={(e) => setToolFilter(e.target.value)}
+                placeholder="Find a tool (music, color, b-roll…)"
+                aria-label="Find a tool"
+                style={{
+                  width: "100%",
+                  background: "rgba(0,0,0,0.3)",
+                  color: "inherit",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                  fontSize: 13,
+                }}
+              />
+            </Box>
+          ) : null}
+          <SectionFilterContext.Provider value={tab === "framing" ? "" : toolFilter}>
           <Box p={4} overflowY="auto" css={scrollbarCss} flex={1} minH={0}>
             {!edit ? null : tab === "edit" ? (
+              <VStack align="stretch" gap={3}>
+              <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />
               <ClipperEditorSidePanel
                 edit={edit}
                 outputDuration={outputDuration}
@@ -1360,7 +1388,9 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 projectId={projectId}
                 onSyncAngle={source ? (file) => syncAngle(file, source.rangeFile, source.clip.segments) : undefined}
               />
-            ) : tab === "text" ? (
+              </VStack>
+            ) : tab === "words" ? (
+              <VStack align="stretch" gap={3}>
               <ClipperTextCutPanel
                 edit={edit}
                 words={autoEditWords}
@@ -1376,21 +1406,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                     : undefined
                 }
               />
-            ) : tab === "ai" ? (
-              <ClipperAiEditorPanel onRun={runAiEdit} hasTranscript={autoEditWords.length > 0} disabled={saving} />
-            ) : !source ? (
-              <VStack align="stretch" gap={2} p={4} borderRadius="lg" border="1px solid" borderColor={theme.surface.hover}>
-                <Text fontSize="sm" fontWeight="semibold">
-                  {tab === "captions" ? "Caption editing" : "Framing"} needs the original clip
-                </Text>
-                <Text fontSize="xs" color={theme.text.muted}>
-                  Captions and framing are burned into this file, so changing them re-renders the clip from your
-                  project's source video. That isn't available for this export: the project's video isn't loaded, or
-                  this clip's start and end have changed since it was exported. Re-render the clip from Preview to
-                  edit it here.
-                </Text>
-              </VStack>
-            ) : tab === "captions" ? (
+              {source ? (
               <VStack align="stretch" gap={3}>
               <ClipperEditorCaptionsPanel
                 groups={captionGroups}
@@ -1430,6 +1446,23 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
                 activeLine={captionGroups.findIndex((group) => currentTime >= group.start && currentTime < group.end)}
                 onChange={(updater) => applyEdit(updater)}
               />
+              </VStack>
+              ) : (
+                <Text fontSize="xs" color={theme.text.muted}>
+                  Caption wording and style need the project's source video (re-render the clip from Preview to edit them here).
+                </Text>
+              )}
+              </VStack>
+            ) : !source ? (
+              <VStack align="stretch" gap={2} p={4} borderRadius="lg" border="1px solid" borderColor={theme.surface.hover}>
+                <Text fontSize="sm" fontWeight="semibold">
+                  Framing needs the original clip
+                </Text>
+                <Text fontSize="xs" color={theme.text.muted}>
+                  Framing is burned into this file, so changing it re-renders the clip from your project's source
+                  video. That isn't available for this export: the project's video isn't loaded, or this clip's start
+                  and end have changed since it was exported. Re-render the clip from Preview to edit it here.
+                </Text>
               </VStack>
             ) : (
               <VStack align="stretch" gap={3}>
@@ -1474,6 +1507,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               </VStack>
             )}
           </Box>
+          </SectionFilterContext.Provider>
         </Flex>
       </Flex>
     </Flex>,

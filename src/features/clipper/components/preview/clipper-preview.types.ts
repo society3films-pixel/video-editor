@@ -44,6 +44,8 @@ export interface ClipperPreviewProps {
   openingInStudio?: boolean;
   /** Opens the framing editor for a clip (framing is saved to the clip and used by every format). */
   onFixFraming?: (clipIndex: number) => void;
+  /** Opens the full editor for a clip (cuts, captions, music, framing…); saving renders an export. */
+  onEditClip?: (clipIndex: number) => void;
   /** The project's range video file, when loaded. */
   getRangeFile?: () => File | null;
   /** Checks the framing of these clips and shows a report. */

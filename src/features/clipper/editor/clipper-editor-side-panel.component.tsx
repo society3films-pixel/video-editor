@@ -1,11 +1,21 @@
 import React from "react";
 import { Box, Flex, HStack, Text, VStack } from "@chakra-ui/react";
-import { Plus, Trash2, Volume2, VolumeX } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Trash2,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import { ClipperEditorExtrasPanel } from "./clipper-editor-extras-panel.component";
-import type { CaptionGroup, WordCue } from "../lib/media/transcription-export.util";
+import type {
+  CaptionGroup,
+  WordCue,
+} from "../lib/media/transcription-export.util";
 import { ClipperEditTemplates } from "./clipper-edit-templates.component";
 import { ClipperBrollLibrary } from "./clipper-broll-library.component";
 import { ClipperCameraAngles } from "./clipper-camera-angles.component";
@@ -39,10 +49,15 @@ interface ClipperEditorSidePanelProps {
   /** The clip's caption lines as shown, for templates. */
   captionGroups?: readonly CaptionGroup[];
   onMeasureColor?: () => Promise<ColorCorrection | null>;
-  punchInCenter?: (start: number, end: number) => { x: number; y: number } | null;
+  punchInCenter?: (
+    start: number,
+    end: number,
+  ) => { x: number; y: number } | null;
   onFindMusic?: () => Promise<MusicSection[]>;
   projectId?: string;
-  onSyncAngle?: (file: File) => Promise<{ offsetSec: number; confidence: number }>;
+  onSyncAngle?: (
+    file: File,
+  ) => Promise<{ offsetSec: number; confidence: number }>;
 }
 
 const POSITIONS: ClipTextPosition[] = ["top", "middle", "bottom"];
@@ -58,22 +73,94 @@ export const fieldStyle: React.CSSProperties = {
   outline: "none",
 };
 
-export function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/** The editor's tool filter ("Find a tool"): sections whose title doesn't match are hidden. */
+export const SectionFilterContext = React.createContext("");
+
+const SECTION_STORAGE_KEY = "openclipper.editor.openSections";
+/** Sections open the first time: the everyday tools. Others start folded. */
+const OPEN_BY_DEFAULT =
+  /^(Part|Zoom|Audio|Text$|Captions|Edit by text|Framing|Shot|Camera moves|AI model)/;
+
+function sectionKey(title: string): string {
+  return title.replace(/\d+/g, "#");
+}
+
+function loadOpenSections(): Record<string, boolean> {
+  try {
+    return JSON.parse(
+      localStorage.getItem(SECTION_STORAGE_KEY) ?? "{}",
+    ) as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+
+/** A folding tool section; remembers whether it was left open. */
+export function Section({
+  title,
+  children,
+  keywords = "",
+}: {
+  title: string;
+  children: React.ReactNode;
+  keywords?: string;
+}) {
   const { theme } = useClipperUi();
+  const filter = React.useContext(SectionFilterContext).trim().toLowerCase();
+  const key = sectionKey(title);
+  const [open, setOpen] = React.useState(
+    () => loadOpenSections()[key] ?? OPEN_BY_DEFAULT.test(title),
+  );
+  if (filter && !`${title} ${keywords}`.toLowerCase().includes(filter))
+    return null;
+  const shown = open || Boolean(filter);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      localStorage.setItem(
+        SECTION_STORAGE_KEY,
+        JSON.stringify({ ...loadOpenSections(), [key]: next }),
+      );
+    } catch {
+      // Not remembered; fine.
+    }
+  };
   return (
     <VStack
       align="stretch"
       gap={3}
-      p={4}
+      p={shown ? 4 : 3}
+      px={4}
       borderRadius="lg"
       border="1px solid"
       borderColor={theme.surface.hover}
       bg={theme.surface.faint}
     >
-      <Text fontSize="xs" fontWeight="bold" textTransform="uppercase" letterSpacing="wider" color={theme.text.muted}>
-        {title}
-      </Text>
-      {children}
+      <HStack
+        as="button"
+        onClick={toggle}
+        justify="space-between"
+        cursor="pointer"
+        aria-expanded={shown}
+        textAlign="left"
+      >
+        <Text
+          fontSize="xs"
+          fontWeight="bold"
+          textTransform="uppercase"
+          letterSpacing="wider"
+          color={theme.text.muted}
+        >
+          {title}
+        </Text>
+        {shown ? (
+          <ChevronDown size={14} color={theme.text.muted} />
+        ) : (
+          <ChevronRight size={14} color={theme.text.muted} />
+        )}
+      </HStack>
+      {shown ? children : null}
     </VStack>
   );
 }
@@ -139,7 +226,8 @@ function TextOverlayCard({
   const setTime = (key: "start" | "end", raw: number) => {
     if (!Number.isFinite(raw)) return;
     const value = Math.min(outputDuration, Math.max(0, raw));
-    if (key === "start") onUpdate({ start: Math.min(value, overlay.end - 0.1) });
+    if (key === "start")
+      onUpdate({ start: Math.min(value, overlay.end - 0.1) });
     else onUpdate({ end: Math.max(value, overlay.start + 0.1) });
   };
 
@@ -172,7 +260,13 @@ function TextOverlayCard({
         value={overlay.text}
         rows={overlay.style ? 1 : 2}
         onChange={(event) => onUpdate({ text: event.target.value })}
-        placeholder={overlay.style === "lower-third" ? "Name" : overlay.style === "title-card" ? "Song title" : undefined}
+        placeholder={
+          overlay.style === "lower-third"
+            ? "Name"
+            : overlay.style === "title-card"
+              ? "Song title"
+              : undefined
+        }
         style={{ ...fieldStyle, resize: "vertical", fontFamily: "inherit" }}
       />
       {overlay.style ? (
@@ -180,7 +274,9 @@ function TextOverlayCard({
           <input
             value={overlay.subtitle ?? ""}
             onChange={(event) => onUpdate({ subtitle: event.target.value })}
-            placeholder={overlay.style === "lower-third" ? "Instrument / band" : "Artist"}
+            placeholder={
+              overlay.style === "lower-third" ? "Instrument / band" : "Artist"
+            }
             aria-label="Second line"
             style={fieldStyle}
           />
@@ -189,7 +285,13 @@ function TextOverlayCard({
             value={overlay.accent ?? "#ffd400"}
             onChange={(event) => onUpdate({ accent: event.target.value })}
             aria-label="Accent colour"
-            style={{ width: 28, height: 24, padding: 0, border: "none", background: "transparent" }}
+            style={{
+              width: 28,
+              height: 24,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+            }}
           />
         </HStack>
       ) : null}
@@ -242,8 +344,16 @@ function TextOverlayCard({
             border="1px solid"
             textTransform="capitalize"
             cursor="pointer"
-            borderColor={overlay.position === position ? clipperTheme.accentGlow : theme.surface.hover}
-            bg={overlay.position === position ? `rgba(${clipperTheme.accentTintRgb},0.2)` : "transparent"}
+            borderColor={
+              overlay.position === position
+                ? clipperTheme.accentGlow
+                : theme.surface.hover
+            }
+            bg={
+              overlay.position === position
+                ? `rgba(${clipperTheme.accentTintRgb},0.2)`
+                : "transparent"
+            }
             color={theme.text.primary}
             onClick={() => onUpdate({ position })}
           >
@@ -266,14 +376,28 @@ function TextOverlayCard({
             type="color"
             value={overlay.color}
             onChange={(event) => onUpdate({ color: event.target.value })}
-            style={{ width: 28, height: 24, border: "none", background: "transparent", padding: 0 }}
+            style={{
+              width: 28,
+              height: 24,
+              border: "none",
+              background: "transparent",
+              padding: 0,
+            }}
             aria-label="Text color"
           />
           <Text fontSize="xs" color={theme.text.muted}>
             Color
           </Text>
         </HStack>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            cursor: "pointer",
+          }}
+        >
           <input
             type="checkbox"
             checked={overlay.background}
@@ -306,8 +430,11 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   projectId,
   onSyncAngle,
 }) => {
-  const activePartIndex = edit.segments.findIndex((segment) => segment.id === activeSegmentId);
-  const activePart = activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
+  const activePartIndex = edit.segments.findIndex(
+    (segment) => segment.id === activeSegmentId,
+  );
+  const activePart =
+    activePartIndex >= 0 ? edit.segments[activePartIndex] : undefined;
   const { theme } = useClipperUi();
   const maxFade = Math.max(0, Math.min(3, outputDuration / 2));
   const muted = edit.volume === 0;
@@ -315,13 +442,19 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
   const updateOverlay = (id: string, patch: Partial<ClipTextOverlay>) =>
     onChange((current) => ({
       ...current,
-      textOverlays: current.textOverlays.map((overlay) => (overlay.id === id ? { ...overlay, ...patch } : overlay)),
+      textOverlays: current.textOverlays.map((overlay) =>
+        overlay.id === id ? { ...overlay, ...patch } : overlay,
+      ),
     }));
 
   return (
     <VStack align="stretch" gap={3}>
       {activePart ? (
-        <Section title={edit.segments.length > 1 ? `Part ${activePartIndex + 1}` : "Zoom"}>
+        <Section
+          title={
+            edit.segments.length > 1 ? `Part ${activePartIndex + 1}` : "Zoom"
+          }
+        >
           <SliderRow
             label="Punch-in zoom"
             value={activePart.zoom ?? 1}
@@ -338,7 +471,12 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
                         ...segment,
                         zoom: zoom > 1.001 ? zoom : undefined,
                         // Aim at the speaker the first time a part is zoomed.
-                        zoomCenter: zoom > 1.001 ? (segment.zoomCenter ?? punchInCenter?.(segment.start, segment.end) ?? undefined) : undefined,
+                        zoomCenter:
+                          zoom > 1.001
+                            ? (segment.zoomCenter ??
+                              punchInCenter?.(segment.start, segment.end) ??
+                              undefined)
+                            : undefined,
                       }
                     : segment,
                 ),
@@ -346,20 +484,33 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
             }
           />
           {edit.angles?.length ? (
-            <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}>
+            <label
+              style={{
+                fontSize: 12,
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+              }}
+            >
               Camera
               <select
                 value={activePart.angle ?? ""}
                 onChange={(e) =>
                   onChange((current) => ({
                     ...current,
-                    segments: current.segments.map((segment) => (segment.id === activePart.id ? { ...segment, angle: e.target.value || undefined } : segment)),
+                    segments: current.segments.map((segment) =>
+                      segment.id === activePart.id
+                        ? { ...segment, angle: e.target.value || undefined }
+                        : segment,
+                    ),
                   }))
                 }
                 style={{ ...fieldStyle, width: "auto", padding: "2px 6px" }}
                 aria-label="Camera for this part"
               >
-                <option value="">Main{edit.angleForSongs ? " (angle during songs)" : ""}</option>
+                <option value="">
+                  Main{edit.angleForSongs ? " (angle during songs)" : ""}
+                </option>
                 {edit.angles.map((angle) => (
                   <option key={angle.id} value={angle.id}>
                     {angle.name}
@@ -387,14 +538,23 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
                   onChange((current) => ({
                     ...current,
                     segments: current.segments.map((segment) =>
-                      segment.id === activePart.id ? { ...segment, audioOffset: Math.abs(audioOffset) < 0.02 ? undefined : audioOffset } : segment,
+                      segment.id === activePart.id
+                        ? {
+                            ...segment,
+                            audioOffset:
+                              Math.abs(audioOffset) < 0.02
+                                ? undefined
+                                : audioOffset,
+                          }
+                        : segment,
                     ),
                   }))
                 }
               />
               <Text fontSize="xs" color={theme.text.muted}>
-                J: this part's sound starts before its picture (good for cutting into a song). L: the last part's sound
-                carries on over this picture. Applied when you save.
+                J: this part's sound starts before its picture (good for cutting
+                into a song). L: the last part's sound carries on over this
+                picture. Applied when you save.
               </Text>
             </>
           ) : null}
@@ -411,7 +571,9 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
               max={2}
               step={0.05}
               display={`${Math.round(edit.volume * 100)}%`}
-              onChange={(volume) => onChange((current) => ({ ...current, volume }))}
+              onChange={(volume) =>
+                onChange((current) => ({ ...current, volume }))
+              }
             />
           </Box>
           <Flex
@@ -426,14 +588,20 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
             borderColor={muted ? theme.status.danger : theme.surface.hover}
             color={muted ? theme.status.danger : theme.text.primary}
             cursor="pointer"
-            onClick={() => onChange((current) => ({ ...current, volume: current.volume === 0 ? 1 : 0 }))}
+            onClick={() =>
+              onChange((current) => ({
+                ...current,
+                volume: current.volume === 0 ? 1 : 0,
+              }))
+            }
           >
             {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </Flex>
         </HStack>
         {edit.volume > 1 ? (
           <Text fontSize="xs" color={theme.text.muted}>
-            Boosts above 100% apply to the saved file; the preview plays at most 100%.
+            Boosts above 100% apply to the saved file; the preview plays at most
+            100%.
           </Text>
         ) : null}
       </Section>
@@ -449,9 +617,22 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
         />
       ) : null}
 
-      {words ? <ClipperCameraAngles edit={edit} onChange={onChange} onSyncAngle={onSyncAngle} /> : null}
+      {words ? (
+        <ClipperCameraAngles
+          edit={edit}
+          onChange={onChange}
+          onSyncAngle={onSyncAngle}
+        />
+      ) : null}
 
-      {projectId && words ? <ClipperBrollLibrary projectId={projectId} edit={edit} words={words} onChange={onChange} /> : null}
+      {projectId && words ? (
+        <ClipperBrollLibrary
+          projectId={projectId}
+          edit={edit}
+          words={words}
+          onChange={onChange}
+        />
+      ) : null}
 
       <ClipperEditorExtrasPanel
         edit={edit}
@@ -475,7 +656,9 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
           max={maxFade}
           step={0.1}
           display={`${edit.fadeInSec.toFixed(1)}s`}
-          onChange={(fadeInSec) => onChange((current) => ({ ...current, fadeInSec }))}
+          onChange={(fadeInSec) =>
+            onChange((current) => ({ ...current, fadeInSec }))
+          }
         />
         <SliderRow
           label="Fade out"
@@ -484,7 +667,9 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
           max={maxFade}
           step={0.1}
           display={`${edit.fadeOutSec.toFixed(1)}s`}
-          onChange={(fadeOutSec) => onChange((current) => ({ ...current, fadeOutSec }))}
+          onChange={(fadeOutSec) =>
+            onChange((current) => ({ ...current, fadeOutSec }))
+          }
         />
       </Section>
 
@@ -500,7 +685,9 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
             onRemove={() =>
               onChange((current) => ({
                 ...current,
-                textOverlays: current.textOverlays.filter((item) => item.id !== overlay.id),
+                textOverlays: current.textOverlays.filter(
+                  (item) => item.id !== overlay.id,
+                ),
               }))
             }
           />
@@ -539,7 +726,10 @@ export const ClipperEditorSidePanel: React.FC<ClipperEditorSidePanelProps> = ({
                     end: Math.min(outputDuration, base.start + seconds),
                     accent: "#ffd400",
                   };
-                  return { ...current, textOverlays: [...current.textOverlays, overlay] };
+                  return {
+                    ...current,
+                    textOverlays: [...current.textOverlays, overlay],
+                  };
                 })
               }
             >

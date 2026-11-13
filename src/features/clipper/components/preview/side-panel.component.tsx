@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, HStack } from "@chakra-ui/react";
-import { Crop, ExternalLink, ListOrdered, ScanFace } from "lucide-react";
+import { Clapperboard, Crop, ExternalLink, ListOrdered, ScanFace } from "lucide-react";
 import {
   OutlinedActionButton,
   getOutlinedActionSurfaceProps,
@@ -41,6 +41,7 @@ export function ClipperPreviewSidePanel({
   onOpenInStudio,
   openingInStudio = false,
   onFixFraming,
+  onEditClip,
   onCheckFraming,
   getRangeFile,
 }: ClipperPreviewSidePanelProps) {
@@ -58,6 +59,13 @@ export function ClipperPreviewSidePanel({
     const active = listPreviews.find((p) => p.clip.index === activeClipIndex);
     const clipIndex = active?.clip.index ?? listPreviews[0]!.clip.index;
     onOpenInStudio(clipIndex);
+  };
+
+  const handleEditClip = () => {
+    if (!onEditClip || listPreviews.length === 0) return;
+    const active = listPreviews.find((p) => p.clip.index === activeClipIndex);
+    pausePreview();
+    onEditClip(active?.clip.index ?? listPreviews[0]!.clip.index);
   };
 
   const handleFixFraming = () => {
@@ -110,7 +118,20 @@ export function ClipperPreviewSidePanel({
             Go to render queue
           </OutlinedActionButton>
 
-          {onFixFraming ? (
+          {onEditClip ? (
+            <OutlinedActionButton
+              startIcon={<Clapperboard size={16} />}
+              onClick={handleEditClip}
+              disabled={listPreviews.length === 0}
+              title="Edit the active clip: cuts, captions, music, B-roll, color, framing. Saving renders it."
+              flexShrink={0}
+              {...TOOLBAR_ACTION_BUTTON_PROPS}
+            >
+              Edit clip
+            </OutlinedActionButton>
+          ) : null}
+
+          {onFixFraming && !onEditClip ? (
             <OutlinedActionButton
               startIcon={<Crop size={16} />}
               onClick={handleFixFraming}
