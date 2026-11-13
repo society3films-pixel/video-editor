@@ -77,7 +77,9 @@ export function buildFolderDraftXml(
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="4"><sequence id="sequence-1"><name>${escapeXml(name)}</name><duration>${frames(timeline.durationSec)}</duration>${rateXml}${markers}` +
     `<media><video><format><samplecharacteristics>${rateXml}<width>${sequence.width}</width><height>${sequence.height}</height><pixelaspectratio>square</pixelaspectratio></samplecharacteristics></format>` +
-    `${track(timeline.video, "video")}${timeline.broll.length ? track(timeline.broll, "video") : ""}</video>` +
+    `${track(timeline.video, "video")}${timeline.broll.length ? track(timeline.broll, "video") : ""}` +
+    // One switched-off track per camera above: turn one on to cut to that camera.
+    `${timeline.angles.map((angle) => track(angle.clips, "video", false)).join("")}</video>` +
     `<audio>${track(timeline.audio, "audio")}${timeline.scratch.length ? track(timeline.scratch, "audio", false) : ""}</audio></media></sequence></xmeml>\n`
   );
 }

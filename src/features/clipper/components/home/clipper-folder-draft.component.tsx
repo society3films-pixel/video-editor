@@ -16,6 +16,11 @@ import {
   type FolderMedia,
 } from "../../editor/folder-draft/folder-draft.util";
 import { refineOffset } from "../../editor/folder-draft/folder-draft-sync.util";
+import {
+  listenPoint,
+  playSyncListen,
+  stopSyncListen,
+} from "../../editor/folder-draft/folder-draft-listen.util";
 import { analyzeDraftSpeakers } from "../../editor/folder-draft/folder-draft-speaker.util";
 import { isTauri } from "../../../../shared/utils/platform.util";
 import {
@@ -112,7 +117,10 @@ export const ClipperFolderDraft: React.FC = () => {
     folder: string;
     stale: boolean;
   } | null>(null);
-  const [rendered, setRendered] = useState<string | null>(null);
+  const [rendered, setRendered] = useState<{
+    path: string;
+    via: string;
+  } | null>(null);
   const [captions, setCaptions] = useState(true);
   const [maxHeight, setMaxHeight] = useState(1080);
   const [openPart, setOpenPart] = useState<number | null>(null);
@@ -188,13 +196,13 @@ export const ClipperFolderDraft: React.FC = () => {
   const render = () =>
     run(async (signal) => {
       if (!draft) return;
-      const path = await renderFolderDraft(draft, {
+      const result = await renderFolderDraft(draft, {
         captions,
         maxHeight: maxHeight || undefined,
         signal,
         onProgress: (ratio) => setBusy({ step: "Rendering the MP4", ratio }),
       });
-      setRendered(path);
+      setRendered(result);
     });
 
   const timeline = draft ? draftTimeline(draft) : null;
@@ -246,6 +254,55 @@ export const ClipperFolderDraft: React.FC = () => {
         refined: false,
       },
     });
+  };
+  const [listening, setListening] = useState<string | null>(null);
+  const listen = async (path: string) => {
+    if (listening) {
+      stopSyncListen();
+      if (listening === path) return;
+    }
+    if (!draft) return;
+    const item = draft.items.find((m) => m.path === path);
+    const masterItem = draftMaster(draft);
+    const reference =
+      item &&
+      item !== masterItem &&
+      masterItem.hasAudio &&
+      listenPoint(item, masterItem) !== null
+        ? masterItem
+        : draft.items.find(
+            (m) =>
+              m !== item && m.hasAudio && item && listenPoint(item, m) !== null,
+          );
+    if (!item || !reference) {
+      setError(
+        `${item?.name ?? "This file"} doesn't overlap another recording long enough to compare.`,
+      );
+      return;
+    }
+    // A talking part inside the overlap when there is one, else the overlap's middle.
+    const overlapStart = Math.max(item.offsetSec!, reference.offsetSec!);
+    const overlapEnd = 2 * listenPoint(item, reference)! - overlapStart;
+    const part = draft.story.parts.find(
+      (p) =>
+        p.kind === "talk" &&
+        p.endSec - p.startSec > 7 &&
+        p.startSec >= overlapStart &&
+        p.endSec <= overlapEnd,
+    );
+    setListening(path);
+    setError(null);
+    try {
+      await playSyncListen(
+        item,
+        reference,
+        part ? part.startSec + 0.5 : listenPoint(item, reference)!,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setListening((current) => (current === path ? null : current));
+    }
   };
   const fineTune = (path: string) =>
     run(async () => {
@@ -525,12 +582,17 @@ export const ClipperFolderDraft: React.FC = () => {
                 onClick={() =>
                   void revealClipperExportInFolder(
                     draft.projectId,
-                    rendered.split(/[\\/]/).pop() ?? rendered,
+                    rendered.path.split(/[\\/]/).pop() ?? rendered.path,
                   )
                 }
               >
                 Show the MP4
               </OutlinedActionButton>
+            ) : null}
+            {rendered ? (
+              <Text fontSize="xs" color={theme.text.muted}>
+                Rendered with {rendered.via}
+              </Text>
             ) : null}
           </HStack>
 
@@ -694,8 +756,9 @@ export const ClipperFolderDraft: React.FC = () => {
             Files
           </Text>
           <Text fontSize="xs" color={theme.text.muted}>
-            Out of sync? Nudge a file by a frame or a second, then Fine-tune
-            locks it to the sound nearby.
+            Out of sync? Listen to check (headphones: recorder left, file
+            right), nudge a file by a frame or a second, then Fine-tune locks it
+            to the sound nearby.
           </Text>
           {draft.items.map((item) => {
             const synced = item.offsetSec !== null && item !== master;
@@ -725,7 +788,8 @@ export const ClipperFolderDraft: React.FC = () => {
                 <Text>
                   {item === master ? "★ " : ""}
                   {item.folder ? `${item.folder}/` : ""}
-                  {item.name}: {ROLE_LABEL[item.role]}, {time(item.durationSec)}
+                  {item.name}: {item.group ? `${item.group}, ` : ""}
+                  {ROLE_LABEL[item.role]}, {time(item.durationSec)}
                   {status}
                 </Text>
                 {synced ? (
@@ -754,6 +818,16 @@ export const ClipperFolderDraft: React.FC = () => {
                     >
                       Fine-tune
                     </button>
+                    {item.hasAudio ? (
+                      <button
+                        type="button"
+                        style={nudgeButton}
+                        onClick={() => void listen(item.path)}
+                        title="Recorder in your left ear, this file in your right: in sync they sound like one voice in the middle"
+                      >
+                        {listening === item.path ? "■ Stop" : "▶ Listen"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       style={nudgeButton}

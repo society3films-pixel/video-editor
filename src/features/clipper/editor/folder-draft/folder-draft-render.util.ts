@@ -126,21 +126,15 @@ function drawFitted(
   ctx.globalAlpha = 1;
 }
 
-function drawCaption(
+/** How a caption is laid out on a frame: up to two lines above the bottom edge. */
+function captionLayout(
   ctx: OffscreenCanvasRenderingContext2D,
   text: string,
   width: number,
   height: number,
-): void {
+) {
   const size = Math.round(height * 0.045);
   ctx.font = `700 ${size}px Inter, "Segoe UI", Arial, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  ctx.lineJoin = "round";
-  ctx.lineWidth = Math.max(2, size * 0.16);
-  ctx.strokeStyle = "rgba(0,0,0,0.85)";
-  ctx.fillStyle = "#fff";
-  // Up to two lines.
   const words = text.split(/\s+/);
   const lines: string[] = [];
   let line = "";
@@ -153,11 +147,75 @@ function drawCaption(
   }
   if (line) lines.push(line);
   const shown = lines.slice(-2);
-  shown.forEach((l, i) => {
-    const y = height * 0.92 - (shown.length - 1 - i) * size * 1.2;
-    ctx.strokeText(l, width / 2, y);
-    ctx.fillText(l, width / 2, y);
-  });
+  return {
+    size,
+    stroke: Math.max(2, size * 0.16),
+    lines: shown.map((l, i) => ({
+      text: l,
+      y: height * 0.92 - (shown.length - 1 - i) * size * 1.2,
+      width: ctx.measureText(l).width,
+    })),
+  };
+}
+
+function drawCaption(
+  ctx: OffscreenCanvasRenderingContext2D,
+  text: string,
+  width: number,
+  height: number,
+): void {
+  const layout = captionLayout(ctx, text, width, height);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = layout.stroke;
+  ctx.strokeStyle = "rgba(0,0,0,0.85)";
+  ctx.fillStyle = "#fff";
+  for (const l of layout.lines) {
+    ctx.strokeText(l.text, width / 2, l.y);
+    ctx.fillText(l.text, width / 2, l.y);
+  }
+}
+
+/** A caption drawn on a small transparent image, and where it goes on the frame (for the native render). */
+export async function captionImage(
+  text: string,
+  width: number,
+  height: number,
+): Promise<{ x: number; y: number; pngBase64: string } | null> {
+  const scratch = new OffscreenCanvas(1, 1).getContext("2d");
+  if (!scratch) return null;
+  const layout = captionLayout(scratch, text, width, height);
+  if (!layout.lines.length) return null;
+  const pad = Math.ceil(layout.stroke) + 2;
+  const widest = Math.max(...layout.lines.map((l) => l.width));
+  const x0 = Math.max(0, Math.floor(width / 2 - widest / 2 - pad));
+  const x1 = Math.min(width, Math.ceil(width / 2 + widest / 2 + pad));
+  const y0 = Math.max(
+    0,
+    Math.floor(
+      Math.min(...layout.lines.map((l) => l.y)) - layout.size * 1.15 - pad,
+    ),
+  );
+  const y1 = Math.min(
+    height,
+    Math.ceil(Math.max(...layout.lines.map((l) => l.y)) + pad),
+  );
+  const canvas = new OffscreenCanvas(
+    Math.max(2, x1 - x0),
+    Math.max(2, y1 - y0),
+  );
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.translate(-x0, -y0);
+  drawCaption(ctx, text, width, height);
+  const bytes = new Uint8Array(
+    await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer(),
+  );
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { x: x0, y: y0, pngBase64: btoa(binary) };
 }
 
 export async function renderDraftTimeline(

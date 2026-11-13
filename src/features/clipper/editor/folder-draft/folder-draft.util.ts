@@ -49,6 +49,8 @@ export interface FolderMedia {
     tried: number;
     refined: boolean;
   };
+  /** Which camera recorded it ("Cam A"): stop-start clips of one camera share a group. */
+  group?: string;
   /** Embedded timecode of the file's start (seconds since midnight), when it has one. */
   timecodeSec?: number | null;
 }
@@ -330,6 +332,7 @@ export async function analyzeShoot(
       }
     }
   }
+  assignCameraGroups(items);
   return { items, master };
 }
 
@@ -353,6 +356,8 @@ export interface DraftTimeline {
   scratch: TimelineClip[];
   /** Where each story part starts on the timeline. */
   markers: Array<{ startSec: number; title: string }>;
+  /** One track per camera: its footage under every lined-up part (for switching cameras in the editor). */
+  angles: Array<{ label: string; clips: TimelineClip[] }>;
   durationSec: number;
 }
 
@@ -596,6 +601,7 @@ export function assembleTimeline(
   const audio: TimelineClip[] = [];
   const scratch: TimelineClip[] = [];
   const markers: DraftTimeline["markers"] = [];
+  const angleClips = new Map<string, TimelineClip[]>();
   const talkSpans: Array<{ start: number; end: number; a: number; b: number }> =
     [];
   let cursor = 0;
@@ -683,6 +689,25 @@ export function assembleTimeline(
       });
     }
     if (!isSong) talkSpans.push({ start: cursor, end: cursor + (b - a), a, b });
+    // Every camera's view of this part, on its camera's track.
+    for (const media of camerasCovering(items, a, b, [
+      "talk",
+      "performance",
+      "broll",
+    ])) {
+      const label = media.group ?? media.name;
+      const list = angleClips.get(label) ?? [];
+      if (!list.some((c) => c.startSec === cursor)) {
+        list.push({
+          media,
+          inSec: fileTimeOf(media, a),
+          outSec: fileTimeOf(media, b),
+          startSec: cursor,
+          label: `${label}: ${part.title}`,
+        });
+      }
+      angleClips.set(label, list);
+    }
     cursor += b - a;
   }
 
@@ -737,7 +762,10 @@ export function assembleTimeline(
     if (!place(media, span.start + (span.end - span.start) / 2 - 2, span))
       rest.unshift(media);
   }
-  return { video, broll, audio, scratch, markers, durationSec: cursor };
+  const angles = [...angleClips.entries()]
+    .sort(([x], [y]) => x.localeCompare(y))
+    .map(([label, clips]) => ({ label, clips }));
+  return { video, broll, audio, scratch, markers, angles, durationSec: cursor };
 }
 
 /** Cameras that could show a story part (for picking one by hand). */
@@ -771,4 +799,38 @@ export function mergeWords(
     covered.push([shifted[0]!.start, shifted[shifted.length - 1]!.end]);
   }
   return merged.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Groups a shoot's camera files by camera: files in the same subfolder, or with the same name
+ * pattern (A001C002…, C0001…, GX01…), are one camera's stop-start clips. Labels come from the
+ * folder name when there is one ("Cam A"), else "Cam A", "Cam B"… in order.
+ */
+export function assignCameraGroups(items: FolderMedia[]): void {
+  const cameras = items.filter((m) => m.hasVideo && m.role !== "broll");
+  const keyOf = (m: FolderMedia) => {
+    const folder = (m.folder ?? "").split("/").filter(Boolean).pop();
+    if (
+      folder &&
+      !/^(video|videos|footage|media|clips?|dcim|private|m4root|clip|100\w*)$/i.test(
+        folder,
+      )
+    )
+      return `folder:${m.folder}`;
+    const stem = m.name.replace(/\.[^.]+$/, "");
+    const prefix = stem.match(/^[A-Za-z_-]*/)![0] || "camera";
+    return `${m.folder ?? ""}/${prefix.toLowerCase()}`;
+  };
+  const keys = [...new Set(cameras.map(keyOf))].sort();
+  const letter = (i: number) =>
+    String.fromCharCode(65 + (i % 26)) +
+    (i >= 26 ? String(Math.floor(i / 26)) : "");
+  const labels = new Map<string, string>();
+  keys.forEach((key, i) => {
+    const folder = key.startsWith("folder:")
+      ? key.slice(7).split("/").filter(Boolean).pop()
+      : null;
+    labels.set(key, folder && keys.length > 1 ? folder : `Cam ${letter(i)}`);
+  });
+  for (const m of cameras) m.group = labels.get(keyOf(m));
 }

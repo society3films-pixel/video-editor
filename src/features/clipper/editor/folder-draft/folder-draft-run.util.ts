@@ -21,6 +21,7 @@ import {
   assembleTimeline,
   fileFor,
   mergeWords,
+  assignCameraGroups,
   type AssembleOptions,
   type CameraActivity,
   type DraftTimeline,
@@ -32,6 +33,8 @@ import {
   draftCaptions,
 } from "./folder-draft-export.util";
 import { renderDraftTimeline } from "./folder-draft-render.util";
+import { renderDraftNative } from "./folder-draft-native-render.util";
+import { isTauri } from "../../../../shared/utils/platform.util";
 
 /** Everything needed to change, re-export or render a draft later (kept per project). */
 export interface FolderDraft {
@@ -86,6 +89,9 @@ export function draftMaster(draft: FolderDraft): FolderMedia {
 }
 
 export function draftTimeline(draft: FolderDraft): DraftTimeline {
+  // Drafts made before camera groups: work them out now.
+  if (draft.items.some((m) => m.hasVideo && m.role !== "broll" && !m.group))
+    assignCameraGroups(draft.items);
   const performances = new Map<string, FolderMedia>();
   for (const [id, path] of Object.entries(draft.performances)) {
     const media = draft.items.find((m) => m.path === path);
@@ -169,6 +175,11 @@ export async function exportFolderDraft(
 }
 
 /** Renders the draft to an MP4 in the project folder. Returns its path. */
+/**
+ * Renders the draft to an MP4 in the project folder. Returns its path and how it was rendered.
+ * The desktop app renders natively (FFmpeg, the graphics card's H.264 encoder where available);
+ * if that can't start, it falls back to rendering in the app.
+ */
 export async function renderFolderDraft(
   draft: FolderDraft,
   options: {
@@ -177,24 +188,53 @@ export async function renderFolderDraft(
     onProgress?: (ratio: number) => void;
     signal?: AbortSignal;
   },
-): Promise<string> {
+): Promise<{ path: string; via: string }> {
   const timeline = draftTimeline(draft);
   const name = `${draft.base}.mp4`;
+  const sequence = draftSequence(timeline, draftMaster(draft));
+  const captions = options.captions
+    ? draftCaptions(draft.story, draft.words)
+    : undefined;
+  if (isTauri()) {
+    try {
+      const result = await renderDraftNative(timeline, {
+        ...sequence,
+        maxHeight: options.maxHeight,
+        captions,
+        projectId: draft.projectId,
+        fileName: name,
+        onProgress: options.onProgress,
+        signal: options.signal,
+      });
+      return { path: result.filePath, via: result.encoder };
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      // A render that started and failed isn't retried (it would fail the same way).
+      if (!/encoder|unavailable|not found|Cannot set up/i.test(message))
+        throw error;
+      console.warn(
+        "[draft] Native render unavailable; rendering in the app:",
+        message,
+      );
+    }
+  }
   const sink = await createClipperExportSink(draft.projectId, name);
   if (!sink) throw new Error("Couldn't write to the project folder.");
   try {
     await renderDraftTimeline(timeline, {
-      ...draftSequence(timeline, draftMaster(draft)),
+      ...sequence,
       maxHeight: options.maxHeight,
-      captions: options.captions
-        ? draftCaptions(draft.story, draft.words)
-        : undefined,
+      captions,
       outputSink: sink.writable,
       signal: options.signal,
       onProgress: options.onProgress,
     });
     const disk = await sink.finalize();
-    return disk.filePath || disk.displayPath || name;
+    return {
+      path: disk.filePath || disk.displayPath || name,
+      via: "in the app",
+    };
   } catch (error) {
     await sink.abort().catch(() => {});
     throw error;
