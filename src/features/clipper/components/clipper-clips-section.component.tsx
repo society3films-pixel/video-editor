@@ -21,6 +21,7 @@ const ClipperManualClipsSection = lazy(async () => {
 
 export const ClipperClipsSection: React.FC<ClipperClipsSectionProps> = ({
   projectId,
+  onRenderAiClips,
   clipPreviews,
   autoPartsClipPreviews,
   aiClipPreviews,
@@ -131,7 +132,7 @@ export const ClipperClipsSection: React.FC<ClipperClipsSectionProps> = ({
             <ClipperAiMcpEmptyState />
           )}
 
-          <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} getRangeFile={getRangeFile} />
+          <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} getRangeFile={getRangeFile} onRenderAll={onRenderAiClips} />
           <ClipperAiMcpPanel clipCount={listPreviews.length} projectId={projectId} />
         </Box>
       ) : (

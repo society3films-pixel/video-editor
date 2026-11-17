@@ -78,7 +78,7 @@ The transcript comes as lines "[first-last] time text": "from" is the first numb
 Reply with JSON only:
 {"title": "...", "parts": [{"title": "short part title", "from": n, "to": m}, {"title": "...", "music": "M3"}, ...]}`;
 
-interface TranscriptLine {
+export interface TranscriptLine {
   from: number;
   to: number;
   start: number;
@@ -88,7 +88,7 @@ interface TranscriptLine {
 }
 
 /** The transcript as sentence lines, each with the index range of its words. */
-function transcriptLines(
+export function transcriptLines(
   words: readonly WordCue[],
   quiet: ReturnType<typeof quietStretches>,
 ): TranscriptLine[] {
@@ -126,7 +126,7 @@ function transcriptLines(
   return lines;
 }
 
-function formatLines(lines: readonly TranscriptLine[]): string {
+export function formatLines(lines: readonly TranscriptLine[]): string {
   const out: string[] = [];
   let previous: TranscriptLine | null = null;
   for (const line of lines) {
@@ -231,11 +231,12 @@ async function shortlistLines(
 }
 
 /** Parses the reply's JSON; asks once more (stricter) when the model answered with something else. */
-async function requestJson<T>(
+export async function requestJson<T>(
   choice: AiChoice,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal: AbortSignal | undefined,
   read: (value: unknown) => T,
+  what = "a paper edit",
 ): Promise<T> {
   let reply = "";
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -258,7 +259,7 @@ async function requestJson<T>(
   }
   const sample = reply.replace(/\s+/g, " ").trim().slice(0, 160);
   throw new Error(
-    `The AI didn't return a paper edit${sample ? ` (it replied: "${sample}${reply.length > 160 ? "…" : ""}")` : " (empty reply)"}. ` +
+    `The AI didn't return ${what}${sample ? ` (it replied: "${sample}${reply.length > 160 ? "…" : ""}")` : " (empty reply)"}. ` +
       "With a local model, a bigger model (or a larger context in Ollama) helps.",
   );
 }
@@ -274,7 +275,7 @@ function extractJson(reply: string): unknown {
 }
 
 /** How much transcript (tokens) to send in one request: local models have smaller contexts. */
-function transcriptBudget(choice: AiChoice): number {
+export function transcriptBudget(choice: AiChoice): number {
   return choice.provider === "local"
     ? 18000
     : choice.provider === "anthropic"

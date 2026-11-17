@@ -226,6 +226,10 @@ export function ClipperPreviewSidePanel({
           onOpenInStudio={onOpenInStudio}
           openingInStudio={openingInStudio}
           rangeWords={state.rangeWords}
+          onRenderAiClips={() => {
+            onClipSourceModeChange?.("ai");
+            onOpenRenderQueue?.();
+          }}
           collageRegions={collageRegions}
           disabledCollageRegionIds={disabledCollageRegionIds}
           onToggleCollageRegion={onToggleCollageRegion}

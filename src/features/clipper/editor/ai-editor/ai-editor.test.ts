@@ -174,7 +174,7 @@ describe("AI clip picking", () => {
     const [, user] = buildClipPickMessages(longWords, { ...options, focus: "funny bits" });
     expect(user!.content).toMatch(/up to 3 clips, each 8-15 seconds/);
     expect(user!.content).toMatch(/Focus: funny bits/);
-    expect(user!.content).toMatch(/\[39\] w39\./);
+    expect(user!.content).toMatch(/\[\d+-39\] \d+:\d+ .*w39\./);
   });
 });
 
