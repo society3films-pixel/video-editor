@@ -129,10 +129,16 @@ export const ClipperClipsSection: React.FC<ClipperClipsSectionProps> = ({
               />
             </Box>
           ) : (
-            <ClipperAiMcpEmptyState />
+            // No AI clips yet: the picker first, so it isn't below the fold.
+            <Box flex="1" minH={0} overflowY="auto">
+              <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} getRangeFile={getRangeFile} onRenderAll={onRenderAiClips} />
+              <ClipperAiMcpEmptyState />
+            </Box>
           )}
 
-          <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} getRangeFile={getRangeFile} onRenderAll={onRenderAiClips} />
+          {listPreviews.length > 0 ? (
+            <ClipperAiPickPanel projectId={projectId} rangeWords={rangeWords ?? []} getRangeFile={getRangeFile} onRenderAll={onRenderAiClips} />
+          ) : null}
           <ClipperAiMcpPanel clipCount={listPreviews.length} projectId={projectId} />
         </Box>
       ) : (

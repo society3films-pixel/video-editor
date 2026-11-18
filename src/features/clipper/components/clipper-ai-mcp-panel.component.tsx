@@ -74,8 +74,8 @@ export const ClipperAiMcpEmptyState: React.FC = () => {
             No AI clips yet
           </Text>
           <Text fontSize="sm" color={theme.text.muted} lineHeight="1.5">
-            Generate clips from your MCP client (Cursor, etc.). This panel reacts within half a
-            second. No chat, no account.
+            Use Pick clips with AI below: your AI reads the whole video and adds the best moments here.
+            (An MCP agent such as Cursor can add clips too.)
           </Text>
         </VStack>
       </VStack>

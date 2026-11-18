@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, HStack } from "@chakra-ui/react";
-import { Clapperboard, Crop, ExternalLink, ListOrdered, ScanFace } from "lucide-react";
+import { Clapperboard, Crop, ExternalLink, ListOrdered, ScanFace, Sparkles } from "lucide-react";
 import {
   OutlinedActionButton,
   getOutlinedActionSurfaceProps,
@@ -117,6 +117,18 @@ export function ClipperPreviewSidePanel({
           >
             Go to render queue
           </OutlinedActionButton>
+
+          {clipSourceMode !== "ai" ? (
+            <OutlinedActionButton
+              startIcon={<Sparkles size={16} />}
+              onClick={() => onClipSourceModeChange("ai")}
+              title="Let the AI read the whole video and pick the best moments as clips"
+              flexShrink={0}
+              {...TOOLBAR_ACTION_BUTTON_PROPS}
+            >
+              Pick clips with AI
+            </OutlinedActionButton>
+          ) : null}
 
           {onEditClip ? (
             <OutlinedActionButton
