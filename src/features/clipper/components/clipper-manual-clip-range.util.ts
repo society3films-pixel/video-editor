@@ -69,6 +69,26 @@ export function wordIndexAtTime(words: WordCue[], timeSec: number): number | nul
   return timeSec - word.end <= next.start - timeSec ? idx : idx + 1;
 }
 
+/**
+ * The words inside a time range (first word ending after `startSec`, last word starting before
+ * `endSec`), for a clip that may start or end in silence. Falls back to the nearest words when no
+ * word is inside.
+ */
+export function selectionWithinTimeRange(words: WordCue[], startSec: number, endSec: number): WordRangeSelection {
+  const lo = Math.min(startSec, endSec);
+  const hi = Math.max(startSec, endSec);
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!;
+    if (word.deleted) continue;
+    if (first < 0 && word.end > lo) first = i;
+    if (word.start < hi) last = i;
+  }
+  if (first < 0 || last < first) return selectionFromTimeRange(words, lo, hi);
+  return { startIdx: first, endIdx: last };
+}
+
 export function selectionFromTimeRange(
   words: WordCue[],
   startSec: number,

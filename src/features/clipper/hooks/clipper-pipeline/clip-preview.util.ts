@@ -81,11 +81,15 @@ export function resolveAutoPartsClips(
 /** Word-index segments for one persisted clip, when every segment has them (falls back to time-only rebuild otherwise). */
 export function payloadClipToWordSegments(
   clip: ClipperClipPayload,
-): Array<{ wordStartIdx: number; wordEndIdx: number }> {
+): Array<{ wordStartIdx: number; wordEndIdx: number; exactStartSec?: number; exactEndSec?: number }> {
   if (!clip.segments.length) return [];
   const hasAll = clip.segments.every((s) => s.wordStartIdx != null && s.wordEndIdx != null);
   if (!hasAll) return [];
-  return clip.segments.map((s) => ({ wordStartIdx: s.wordStartIdx!, wordEndIdx: s.wordEndIdx! }));
+  return clip.segments.map((s) => ({
+    wordStartIdx: s.wordStartIdx!,
+    wordEndIdx: s.wordEndIdx!,
+    ...(s.exact ? { exactStartSec: s.startSec, exactEndSec: s.endSec } : {}),
+  }));
 }
 
 /** Rebuilds full clip objects from DB-persisted boundaries (auto-parts: always time-only; AI: word-index when available). */

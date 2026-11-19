@@ -50,6 +50,8 @@ export function buildClipsFromWordRanges(
     const normalizedSegments = range.segments.map((seg) => ({
       wordStartIdx: Math.max(0, Math.floor(seg.wordStartIdx)),
       wordEndIdx: Math.min(rangeWords.length - 1, Math.floor(seg.wordEndIdx)),
+      exactStartSec: seg.exactStartSec,
+      exactEndSec: seg.exactEndSec,
     }));
     const paddedWindows = padSegmentWindows(normalizedSegments, rangeWords, rangeDurationSec, margins, envelope);
 

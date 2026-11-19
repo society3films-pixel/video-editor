@@ -95,6 +95,9 @@ export function clipPayloadFromWordRanges(
     : segments.map((segment, orderIndex) => {
         const override = options.segmentTimes?.[orderIndex];
         if (override) return override;
+        if (segment.exactStartSec != null && segment.exactEndSec != null) {
+          return { startSec: Math.max(0, segment.exactStartSec), endSec: Math.min(rangeDurationSec, segment.exactEndSec) };
+        }
         const startWord = rangeWords[segment.wordStartIdx];
         const endWord = rangeWords[segment.wordEndIdx];
         if (!startWord || !endWord) {
@@ -114,6 +117,7 @@ export function clipPayloadFromWordRanges(
       endSec: window.endSec,
       wordStartIdx: segment.wordStartIdx,
       wordEndIdx: segment.wordEndIdx,
+      ...(segment.exactStartSec != null && segment.exactEndSec != null ? { exact: true } : {}),
     };
   });
 

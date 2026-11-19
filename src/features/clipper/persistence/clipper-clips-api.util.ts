@@ -12,6 +12,8 @@ export interface ClipperClipSegmentPayload {
   endSec: number;
   wordStartIdx?: number | null;
   wordEndIdx?: number | null;
+  /** startSec / endSec were chosen by hand: use them as they are (not re-padded from the words). */
+  exact?: boolean;
 }
 
 export interface ClipperClipPayload extends ClipperClipBounds {

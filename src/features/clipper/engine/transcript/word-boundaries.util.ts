@@ -17,7 +17,7 @@ interface SegmentLimits {
 }
 
 export function padSegmentWindows(
-  segments: { wordStartIdx: number; wordEndIdx: number }[],
+  segments: { wordStartIdx: number; wordEndIdx: number; exactStartSec?: number; exactEndSec?: number }[],
   rangeWords: WordCue[],
   rangeDurationSec: number,
   opts: WordMarginOptions = {},
@@ -50,7 +50,13 @@ export function padSegmentWindows(
     next.startMin = Math.max(next.startMin, next.baseStart - sharedBudget);
   }
 
-  return limits.map((limit) => {
+  return limits.map((limit, index) => {
+    // Times chosen by hand win (they may reach past the words into silence or music).
+    const exact = segments[index]!;
+    if (exact.exactStartSec != null && exact.exactEndSec != null) {
+      const startSec = Math.max(0, Math.min(duration, exact.exactStartSec));
+      return { startSec, endSec: Math.max(startSec + 0.05, Math.min(duration, exact.exactEndSec)) };
+    }
     let startSec = limit.startMin;
     let endSec = limit.endMax;
     if (envelope) {
