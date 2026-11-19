@@ -250,7 +250,7 @@ export function ClipperOwnersView({ onOpenIntegrations, onHeaderBackChange }: Cl
             fontWeight="bold"
             color={theme.text.primary}
           >
-            Owners
+            Channels & owners
           </SecondaryMainTitle>
           <Text color={theme.text.muted}>
             Group projects under content owners and link integrated channels for publishing.

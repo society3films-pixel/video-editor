@@ -45,9 +45,9 @@ export function isClipperActivelyRendering(
 export function clipperStageLabel(stage: ClipperStage): string {
   switch (stage) {
     case "idle":
-      return "Awaiting upload";
+      return "Needs a video";
     case "trimming":
-      return "Choose clip window";
+      return "Choose the part to clip";
     case "uploading":
     case "transcribing":
     case "analyzing-faces":

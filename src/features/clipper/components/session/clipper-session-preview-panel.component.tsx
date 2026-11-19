@@ -176,23 +176,7 @@ export const ClipperSessionPreviewPanel: React.FC<
     );
   };
 
-  const switchFramingFormat = (formatId: string) => {
-    if (!framingEditor) return;
-    const source = getClipEditorSourceForClip(
-      framingEditor.clipIndex,
-      formatId,
-    );
-    if (source) {
-      const base = sourceResultFor(framingEditor.clipIndex, source);
-      setFramingEditor({
-        ...framingEditor,
-        source,
-        base,
-        opened: base,
-        savedEdit: null,
-      });
-    }
-  };
+
   const transcriptEditActions = useMemo(
     () => ({ applyTranscriptOp, undoTranscriptEdit, redoTranscriptEdit }),
     [applyTranscriptOp, redoTranscriptEdit, undoTranscriptEdit],

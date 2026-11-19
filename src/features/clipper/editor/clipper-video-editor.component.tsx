@@ -1130,7 +1130,7 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               startIcon={<Layers size={16} />}
               title="Save this edit in every enabled format, each framed for its shape"
             >
-              Every format
+              Save in every format
             </OutlinedActionButton>
           ) : null}
           {!clipMode ? (
@@ -1164,6 +1164,8 @@ export const ClipperVideoEditor: React.FC<ClipperVideoEditorProps> = ({
               </HStack>
             ) : clipMode ? (
               "Save framing"
+            ) : fromSource ? (
+              "Save & render"
             ) : (
               "Save as new export"
             )}

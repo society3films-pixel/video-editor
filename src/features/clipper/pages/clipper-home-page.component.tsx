@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   Box,
   Center,
-  Flex,
+  Grid,
   HStack,
   Text,
   VStack,
@@ -66,8 +66,7 @@ function StartCard(props: {
       justify="space-between"
       gap={3}
       p={4}
-      flex="1 1 240px"
-      maxW={{ base: "full", md: "360px" }}
+      minW={0}
       borderRadius="xl"
       border="1px solid"
       borderColor={props.active ? theme.text.primary : theme.dashboard.border}
@@ -286,7 +285,14 @@ export function ClipperHomePage() {
               </OutlinedActionButton>
             </HStack>
 
-            <Flex gap={3} flexWrap="wrap" flexShrink={0}>
+            <Grid
+              gap={3}
+              flexShrink={0}
+              templateColumns={{
+                base: "1fr",
+                md: "repeat(auto-fit, minmax(240px, 1fr))",
+              }}
+            >
               <StartCard
                 title="Shorts from a video"
                 text="Pick a video: clips are found, reframed and captioned. Then Edit clip in Preview for full control."
@@ -315,7 +321,7 @@ export function ClipperHomePage() {
                   onClick={() => toggleStartPanel("watch")}
                 />
               ) : null}
-            </Flex>
+            </Grid>
 
             {isTauri() && startPanel === "draft" ? (
               <ClipperFolderDraft />

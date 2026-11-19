@@ -107,16 +107,6 @@ export function ClipperPreviewSidePanel({
         align="center"
       >
         <HStack gap={2} flexShrink={0} flexWrap="wrap" align="center">
-          <OutlinedActionButton
-            startIcon={<ListOrdered size={16} />}
-            onClick={onOpenRenderQueue}
-            loading={isRendering}
-            loadingText="Rendering…"
-            flexShrink={0}
-            {...TOOLBAR_ACTION_BUTTON_PROPS}
-          >
-            Go to render queue
-          </OutlinedActionButton>
 
           {clipSourceMode !== "ai" ? (
             <OutlinedActionButton
@@ -192,6 +182,17 @@ export function ClipperPreviewSidePanel({
               Open in Studio
             </OutlinedActionButton>
           ) : null}
+
+          <OutlinedActionButton
+            startIcon={<ListOrdered size={16} />}
+            onClick={onOpenRenderQueue}
+            loading={isRendering}
+            loadingText="Rendering…"
+            flexShrink={0}
+            {...TOOLBAR_ACTION_BUTTON_PROPS}
+          >
+            Render queue…
+          </OutlinedActionButton>
         </HStack>
 
         <HStack gap={1} flexShrink={0} align="center">

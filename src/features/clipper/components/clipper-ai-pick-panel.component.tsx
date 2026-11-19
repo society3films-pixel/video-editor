@@ -357,12 +357,13 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({
             borderColor="rgba(255,255,255,0.06)"
           >
             <Text fontSize="xs" fontWeight="semibold">
-              Long-form edit
+              Long-form edit of this video
             </Text>
             <Text fontSize="xs" color={theme.text.muted}>
-              The AI builds a story from the whole interview (best answers in a
-              flowing order, performances between topics) and saves it as one AI
-              clip to render in 16:9 and fine-tune.
+              The AI builds a story from this video (best answers in a flowing
+              order, performances between topics) and saves it as one AI clip to
+              render in 16:9 and fine-tune. For a shoot with several cameras and a
+              recorder, use Long-form draft from a shoot on the home page.
             </Text>
             <HStack
               gap={2}

@@ -20,7 +20,7 @@ export function ClipperHomeSettingsView() {
           Settings
         </SecondaryMainTitle>
         <Text color={theme.text.muted} fontSize="md" lineHeight="1.6" maxW="36em">
-          Choose a local or cloud speech-to-text provider for captions. Cloud providers use your own API keys stored locally in SQLite.
+          App updates, and the speech-to-text used for captions (on this computer, or a cloud service with your own key). Settings stay on this computer.
         </Text>
       </VStack>
 

@@ -28,7 +28,7 @@ export const ClipperAiMcpPanel: React.FC<ClipperAiMcpPanelProps> = ({
     >
       <VStack align="stretch" gap={1.5}>
         <Text fontSize="sm" fontWeight="semibold" color={theme.text.primary}>
-          Controlled by MCP
+          For AI agents (MCP)
         </Text>
         <Text fontSize="sm" color={theme.text.muted} lineHeight="1.5">
           {clipCount > 0

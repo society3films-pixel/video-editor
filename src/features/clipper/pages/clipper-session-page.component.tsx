@@ -41,12 +41,11 @@ function ClipperSessionContent({
       <ClipperLayout>
         <Box p={8} borderRadius="2xl" maxW="560px" mx="auto" {...errorPanel}>
           <Text color={theme.status.danger} fontWeight="semibold" mb={2}>
-            Could not open this clip project
+            Couldn't open this project
           </Text>
           <Text color={theme.text.muted} mb={5}>
             {loader.error ?? "Unknown error"}
           </Text>
-          <BackLink label="Back to clips" onClick={() => navigate("/clipper")} />
         </Box>
       </ClipperLayout>
     );
@@ -122,7 +121,6 @@ export function ClipperSessionPage() {
             {projectError ? (
               <VStack gap={4}>
                 <Text color={theme.status.danger}>{projectError}</Text>
-                <BackLink label="Back to clips" onClick={() => navigate("/clipper")} />
               </VStack>
             ) : (
               <ClipperProjectLoadingPanel status={fetchLoadingStatus} />
