@@ -1,7 +1,15 @@
 import { getClipperFormatDef } from "../shared/formats.util";
 import { OutlinedActionButton } from "../../../shared/components/buttons/outlined-action-button.component";
 import React, { useMemo } from "react";
-import { Box, Button, Checkbox, Flex, HStack, Text, VStack } from "@chakra-ui/react";
+import {
+  Box,
+  Button,
+  Checkbox,
+  Flex,
+  HStack,
+  Text,
+  VStack,
+} from "@chakra-ui/react";
 import { Clapperboard, Minus } from "lucide-react";
 import { MainButton } from "../../../shared/components/buttons/main-button.component";
 import { CLIPPER_FORMAT_DEFS } from "../shared/formats.util";
@@ -18,6 +26,10 @@ import {
   computeRenderQueueSelectionStats,
   type ClipThumbSpec,
 } from "./clipper-render-queue-setup.util";
+import {
+  describeTemplate,
+  type EditTemplate,
+} from "../editor/edit-templates.util";
 
 interface ClipperRenderQueueSetupProps {
   clipPreviews: ClipperClipPreview[];
@@ -35,9 +47,23 @@ interface ClipperRenderQueueSetupProps {
   onViewExports?: () => void;
   /** Framing warnings per clip index (from the framing check). */
   framingWarnings?: Map<number, string[]>;
+  /** Looks (built-in trending looks and your templates) to render every clip with. */
+  looks?: EditTemplate[];
+  lookId?: string;
+  onLookChange?: (id: string) => void;
+  /** A render with a look in progress. */
+  lookProgress?: {
+    label: string;
+    done: number;
+    total: number;
+    ratio: number;
+  } | null;
+  onStopLook?: () => void;
 }
 
-export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = ({
+export const ClipperRenderQueueSetup: React.FC<
+  ClipperRenderQueueSetupProps
+> = ({
   clipPreviews,
   rangeTrimmedVideoUrl,
   formats,
@@ -52,7 +78,13 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
   exportCount = 0,
   onViewExports,
   framingWarnings,
+  looks = [],
+  lookId = "",
+  onLookChange,
+  lookProgress = null,
+  onStopLook,
 }) => {
+  const look = looks.find((item) => item.id === lookId) ?? null;
   const { theme, outlineButton } = useClipperUi();
 
   const thumbSpecsKey = clipPreviews
@@ -67,17 +99,35 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
       })),
     [thumbSpecsKey],
   );
-  const { registerRow, setCanvasRef } = useClipThumbnails(rangeTrimmedVideoUrl, thumbSpecs);
+  const { registerRow, setCanvasRef } = useClipThumbnails(
+    rangeTrimmedVideoUrl,
+    thumbSpecs,
+  );
 
-  const transcripts = useMemo(() => clipTranscriptsByIndex(clipPreviews), [clipPreviews]);
+  const transcripts = useMemo(
+    () => clipTranscriptsByIndex(clipPreviews),
+    [clipPreviews],
+  );
   const skipExisting = formats.skipExisting;
-  const { globalState, globalExported, clipsWithFormats, totalOutputs, exportedOutputs } = useMemo(
+  const {
+    globalState,
+    globalExported,
+    clipsWithFormats,
+    totalOutputs,
+    exportedOutputs,
+  } = useMemo(
     () =>
-      computeRenderQueueSelectionStats(clipPreviews, getClipFormatIds, existingExports, skipExisting),
+      computeRenderQueueSelectionStats(
+        clipPreviews,
+        getClipFormatIds,
+        existingExports,
+        skipExisting,
+      ),
     [clipPreviews, existingExports, getClipFormatIds, skipExisting],
   );
 
-  const skippedLabel = skipExisting && exportedOutputs > 0 ? ` (${exportedOutputs} skipped)` : "";
+  const skippedLabel =
+    skipExisting && exportedOutputs > 0 ? ` (${exportedOutputs} skipped)` : "";
   const renderLabel =
     totalOutputs === 0
       ? exportedOutputs > 0 && skipExisting
@@ -89,11 +139,17 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
     <VStack align="stretch" gap={6}>
       <HStack justify="space-between" flexWrap="wrap" gap={3}>
         <Box>
-          <Text fontSize="2xl" fontWeight="bold" color={theme.text.primary} mb={1}>
+          <Text
+            fontSize="2xl"
+            fontWeight="bold"
+            color={theme.text.primary}
+            mb={1}
+          >
             Render queue
           </Text>
           <Text fontSize="sm" color={theme.text.muted}>
-            Choose which formats to render for each clip.
+            Choose which formats to render for each clip, and a look for all of
+            them.
           </Text>
         </Box>
         <HStack gap={3} flexWrap="wrap">
@@ -125,18 +181,103 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
               filter: "brightness(1.08)",
               transform: "translateY(-1px)",
               boxShadow: `0 4px 20px rgba(${clipperTheme.ctaTintRgb}, 0.4)`,
-              _disabled: { transform: "none", filter: "none", boxShadow: "none" },
+              _disabled: {
+                transform: "none",
+                filter: "none",
+                boxShadow: "none",
+              },
             }}
-            _disabled={{ opacity: 0.45, cursor: "not-allowed", boxShadow: "none" }}
+            _disabled={{
+              opacity: 0.45,
+              cursor: "not-allowed",
+              boxShadow: "none",
+            }}
             onClick={onRender}
-            loading={isRendering}
-            disabled={totalOutputs === 0}
+            loading={isRendering || Boolean(lookProgress)}
+            disabled={totalOutputs === 0 || Boolean(lookProgress)}
           >
             {!isRendering ? <Clapperboard size={18} strokeWidth={2} /> : null}
             {isRendering ? "Rendering…" : renderLabel}
           </MainButton>
         </HStack>
       </HStack>
+
+      {onLookChange ? (
+        <VStack
+          align="stretch"
+          gap={2}
+          p={4}
+          borderRadius="xl"
+          border="1px solid"
+          borderColor={theme.surface.hover}
+          bg={theme.background.card}
+        >
+          <HStack gap={3} flexWrap="wrap">
+            <Text
+              fontSize="sm"
+              fontWeight="semibold"
+              color={theme.text.primary}
+            >
+              Look
+            </Text>
+            <select
+              value={lookId}
+              onChange={(e) => onLookChange(e.target.value)}
+              disabled={Boolean(lookProgress)}
+              aria-label="Look for every clip"
+              style={{
+                background: "rgba(0,0,0,0.35)",
+                color: "inherit",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: 6,
+                padding: "5px 8px",
+                fontSize: 13,
+              }}
+            >
+              <option value="">Project caption style (no look)</option>
+              <optgroup label="Trending looks">
+                {looks
+                  .filter((item) => item.builtIn)
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+              </optgroup>
+              {looks.some((item) => !item.builtIn) ? (
+                <optgroup label="My templates">
+                  {looks
+                    .filter((item) => !item.builtIn)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                </optgroup>
+              ) : null}
+            </select>
+          </HStack>
+          <Text fontSize="xs" color={theme.text.muted}>
+            {look
+              ? `${look.description ?? describeTemplate(look)} Every clip is rendered with it; open any one later with Edit clip to tweak it.`
+              : "Clips render with the caption style in the project's settings. Pick a look to style every clip (captions, colour, cuts, sound effects) as it renders."}
+          </Text>
+          {lookProgress ? (
+            <HStack gap={3}>
+              <Text fontSize="xs" color={theme.text.muted}>
+                Rendering {Math.min(lookProgress.done + 1, lookProgress.total)}{" "}
+                of {lookProgress.total} · {lookProgress.label} ·{" "}
+                {Math.round(lookProgress.ratio * 100)}%
+              </Text>
+              {onStopLook ? (
+                <Button size="xs" variant="outline" onClick={onStopLook}>
+                  Stop
+                </Button>
+              ) : null}
+            </HStack>
+          ) : null}
+        </VStack>
+      ) : null}
 
       <VStack
         align="stretch"
@@ -148,7 +289,12 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
         bg={theme.surface.inset}
       >
         <HStack gap={6} flexWrap="wrap" align="flex-start" w="full">
-          <VStack align="stretch" gap={1.5} flex="1" minW={{ base: "full", lg: "280px" }}>
+          <VStack
+            align="stretch"
+            gap={1.5}
+            flex="1"
+            minW={{ base: "full", lg: "280px" }}
+          >
             <Text fontSize="xs" color={theme.text.onBrandMuted} lineHeight="1">
               All clips
             </Text>
@@ -161,7 +307,9 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
                     size="sm"
                     colorPalette="blue"
                     checked={checked}
-                    onCheckedChange={() => onSetFormatForAll(def.id, checked !== true)}
+                    onCheckedChange={() =>
+                      onSetFormatForAll(def.id, checked !== true)
+                    }
                   >
                     <Checkbox.HiddenInput />
                     <Checkbox.Control>
@@ -170,8 +318,16 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
                     <Checkbox.Label>
                       <Text
                         fontSize="sm"
-                        color={globalExported[def.id] ? theme.status.danger : theme.text.onBrandMuted}
-                        title={globalExported[def.id] ? "Already exported for every selected clip" : undefined}
+                        color={
+                          globalExported[def.id]
+                            ? theme.status.danger
+                            : theme.text.onBrandMuted
+                        }
+                        title={
+                          globalExported[def.id]
+                            ? "Already exported for every selected clip"
+                            : undefined
+                        }
                       >
                         {def.label}
                       </Text>
@@ -191,7 +347,9 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
                 size="sm"
                 colorPalette="blue"
                 checked={skipExisting}
-                onCheckedChange={() => onChangeFormats({ skipExisting: !skipExisting })}
+                onCheckedChange={() =>
+                  onChangeFormats({ skipExisting: !skipExisting })
+                }
               >
                 <Checkbox.HiddenInput />
                 <Checkbox.Control>
@@ -206,7 +364,11 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
             </Flex>
           </VStack>
 
-          <ExportFormatControls formats={formats} onChange={onChangeFormats} layout="bar" />
+          <ExportFormatControls
+            formats={formats}
+            onChange={onChangeFormats}
+            layout="bar"
+          />
         </HStack>
       </VStack>
 
@@ -215,9 +377,18 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
           Captions
         </Text>
         {formats.enabledFormatIds.map((formatId) => {
-          const clean = formats.cleanCaptionFormatIds?.includes(formatId) ?? false;
+          const clean =
+            formats.cleanCaptionFormatIds?.includes(formatId) ?? false;
           return (
-            <label key={formatId} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+            <label
+              key={formatId}
+              style={{
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+                cursor: "pointer",
+              }}
+            >
               <input
                 type="checkbox"
                 checked={!clean}
@@ -232,21 +403,42 @@ export const ClipperRenderQueueSetup: React.FC<ClipperRenderQueueSetupProps> = (
             </label>
           );
         })}
-        <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
-          <input type="checkbox" checked={Boolean(formats.writeSrt)} onChange={(e) => onChangeFormats({ writeSrt: e.target.checked })} />
+        <label
+          style={{
+            display: "flex",
+            gap: 6,
+            alignItems: "center",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={Boolean(formats.writeSrt)}
+            onChange={(e) => onChangeFormats({ writeSrt: e.target.checked })}
+          />
           Also save an .srt file with each export
         </label>
       </HStack>
 
       {framingWarnings && framingWarnings.size > 0 ? (
-        <HStack gap={3} p={3} borderRadius="lg" border="1px solid" borderColor={theme.status.warning} flexWrap="wrap">
+        <HStack
+          gap={3}
+          p={3}
+          borderRadius="lg"
+          border="1px solid"
+          borderColor={theme.status.warning}
+          flexWrap="wrap"
+        >
           <Text fontSize="sm" flex={1} minW="200px">
-            {framingWarnings.size} clip{framingWarnings.size === 1 ? " has" : "s have"} framing issues (faces cut off, nobody in
-            frame, or a shaky camera). Fix them in Preview with Check framing, or hold them back for now.
+            {framingWarnings.size} clip
+            {framingWarnings.size === 1 ? " has" : "s have"} framing issues
+            (faces cut off, nobody in frame, or a shaky camera). Fix them in
+            Preview with Check framing, or hold them back for now.
           </Text>
           <OutlinedActionButton
             onClick={() => {
-              for (const clipIndex of framingWarnings.keys()) onSetAllFormatsForClip(clipIndex, false);
+              for (const clipIndex of framingWarnings.keys())
+                onSetAllFormatsForClip(clipIndex, false);
             }}
             disabled={isRendering}
           >

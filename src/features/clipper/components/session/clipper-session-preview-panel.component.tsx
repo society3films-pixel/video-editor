@@ -19,6 +19,7 @@ import {
 } from "../../editor/open-export-editor.util";
 import type { ClipEditorSource } from "../../editor/clip-editor-source.util";
 import type { ClipperFormatResult } from "../../shared/state.util";
+import { sourceResultFor } from "../../editor/source-result.util";
 
 /** Framing only matters for cropped formats. */
 const FRAMING_FORMATS = CLIPPER_FORMAT_DEFS.filter(
@@ -30,26 +31,6 @@ const DEFAULT_FRAMING_FORMAT =
 
 type SessionView = ReturnType<typeof useClipperSessionView>;
 
-/** Stand-in export for a clip that hasn't been exported yet ("source:" ids render from the source video). */
-function sourceResultFor(
-  clipIndex: number,
-  source: ClipEditorSource,
-): ClipperFormatResult {
-  return {
-    id: `source:${clipIndex}:${source.formatDef.id}`,
-    formatId: source.formatDef.id,
-    platform: source.formatDef.platform,
-    label: source.formatDef.label,
-    width: source.outputSize.width,
-    height: source.outputSize.height,
-    fileSize: 0,
-    previewUrl: source.rangeVideoUrl,
-    clipIndex,
-    exportedAt: "",
-    clipStartSec: source.clip.startSec,
-    clipEndSec: source.clip.endSec,
-  };
-}
 
 export interface ClipperSessionPreviewPanelProps {
   session: SessionView;
