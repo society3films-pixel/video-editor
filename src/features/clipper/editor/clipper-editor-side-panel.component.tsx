@@ -79,7 +79,7 @@ export const SectionFilterContext = React.createContext("");
 const SECTION_STORAGE_KEY = "openclipper.editor.openSections";
 /** Sections open the first time: the everyday tools. Others start folded. */
 const OPEN_BY_DEFAULT =
-  /^(Part|Zoom|Audio|Text$|Captions|Edit by text|Framing|Shot|Camera moves|AI model)/;
+  /^(Looks and templates|Part|Zoom|Audio|Text$|Captions|Edit by text|Framing|Shot|Camera moves|AI model)/;
 
 function sectionKey(title: string): string {
   return title.replace(/\d+/g, "#");

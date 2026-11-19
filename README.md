@@ -40,6 +40,7 @@ Free, open-source Windows desktop app for turning long videos into short, platfo
   - **Shorts from a video**: a project from one video. The app transcribes it, finds clips (or **Pick clips with AI** in Preview reads the whole video and picks the best moments), reframes and captions them. **Edit clip** opens the full editor on any clip; **Render queue** renders every clip in every format at once.
   - **Long-form draft from a shoot**: a folder of cameras, recorder files and B-roll becomes a synced, transcribed story: 1. check files and sync, 2. shape the story, 3. finish in Premiere/Resolve or render an MP4 here.
   - **Watch a folder**: new videos dropped in a folder become projects automatically.
+- **Trending looks**: in the clip editor (Edit → Looks and templates) or Edit all clips, one click sets a current short-form style: Viral talking head, One word at a time, Podcast clip, Emoji pop, Kinetic captions, Karaoke lyrics, Live performance, Cinematic story, Clean and minimal (captions, colour, jump cuts, punch-ins, sound effects, hook, progress bar). Save your own tweaks as a template.
 - **Publish**: send exports to your channels (and set up channels and owners).
 - **Settings**: General (updates, speech-to-text), AI (the model every AI feature uses, local or cloud), Integrations, MCP.
 

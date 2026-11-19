@@ -6,10 +6,22 @@ import { useClipperUi } from "../shared/use-clipper-ui.hook";
 import { clipperTheme } from "../shared/theme.util";
 import type { ClipperFormatResult } from "../shared/state.util";
 import type { ClipEditorBridge } from "../editor/clip-editor-source.util";
-import { DEFAULT_AUTO_EDIT_OPTIONS, type AutoEditOptions } from "../editor/auto-edit.util";
-import { batchEditExport, latestExportPerClip } from "../editor/batch-edit.util";
-import { describeAiChoice, resolveAiChoice } from "../editor/ai-editor/ai-choice.util";
-import { loadTemplates, type EditTemplate } from "../editor/edit-templates.util";
+import {
+  DEFAULT_AUTO_EDIT_OPTIONS,
+  type AutoEditOptions,
+} from "../editor/auto-edit.util";
+import {
+  batchEditExport,
+  latestExportPerClip,
+} from "../editor/batch-edit.util";
+import {
+  describeAiChoice,
+  resolveAiChoice,
+} from "../editor/ai-editor/ai-choice.util";
+import {
+  loadTemplates,
+  type EditTemplate,
+} from "../editor/edit-templates.util";
 
 interface ClipperBatchEditProps {
   projectId: string;
@@ -30,13 +42,25 @@ const STEP_LABELS: Array<[keyof AutoEditOptions, string]> = [
 ];
 
 /** "Edit all clips": Auto edit and/or an AI instruction on every clip, each saved as a new export. */
-export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, exports, bridge, onChanged }) => {
+export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({
+  projectId,
+  exports,
+  bridge,
+  onChanged,
+}) => {
   const { theme } = useClipperUi();
   const [open, setOpen] = useState(false);
   const [useAuto, setUseAuto] = useState(true);
-  const [steps, setSteps] = useState<AutoEditOptions>(DEFAULT_AUTO_EDIT_OPTIONS);
+  const [steps, setSteps] = useState<AutoEditOptions>(
+    DEFAULT_AUTO_EDIT_OPTIONS,
+  );
   const [instruction, setInstruction] = useState("");
-  const [status, setStatus] = useState<{ index: number; total: number; label: string; ratio: number } | null>(null);
+  const [status, setStatus] = useState<{
+    index: number;
+    total: number;
+    label: string;
+    ratio: number;
+  } | null>(null);
   const [log, setLog] = useState<Array<{ text: string; error?: boolean }>>([]);
   const abortRef = useRef<AbortController | null>(null);
   const [templates, setTemplates] = useState<EditTemplate[]>([]);
@@ -47,7 +71,10 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
   const template = templates.find((t) => t.id === templateId) ?? null;
 
   const targets = latestExportPerClip(exports);
-  const canRun = Boolean(bridge) && targets.length > 0 && (useAuto || instruction.trim().length > 0 || Boolean(template));
+  const canRun =
+    Boolean(bridge) &&
+    targets.length > 0 &&
+    (useAuto || instruction.trim().length > 0 || Boolean(template));
 
   const run = async () => {
     if (!bridge) return;
@@ -57,13 +84,20 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
       try {
         choice = await resolveAiChoice();
       } catch (error) {
-        setLog([{ text: error instanceof Error ? error.message : String(error), error: true }]);
+        setLog([
+          {
+            text: error instanceof Error ? error.message : String(error),
+            error: true,
+          },
+        ]);
         return;
       }
     }
     const controller = new AbortController();
     abortRef.current = controller;
-    const entries: Array<{ text: string; error?: boolean }> = choice ? [{ text: `Using ${describeAiChoice(choice)}.` }] : [];
+    const entries: Array<{ text: string; error?: boolean }> = choice
+      ? [{ text: `Using ${describeAiChoice(choice)}.` }]
+      : [];
     try {
       for (const [index, item] of targets.entries()) {
         if (controller.signal.aborted) break;
@@ -76,20 +110,30 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
             exports,
             bridge,
             { auto: useAuto ? steps : null, instruction, choice, template },
-            { signal: controller.signal, onProgress: (ratio) => setStatus({ index, total: targets.length, label, ratio }) },
+            {
+              signal: controller.signal,
+              onProgress: (ratio) =>
+                setStatus({ index, total: targets.length, label, ratio }),
+            },
           );
           entries.push(
             outcome.kind === "saved"
-              ? { text: `✓ ${label}: saved ${outcome.fileName}${outcome.notes.length ? ` (${outcome.notes.length} AI change${outcome.notes.length === 1 ? "" : "s"} skipped)` : ""}` }
+              ? {
+                  text: `✓ ${label}: saved ${outcome.fileName}${outcome.notes.length ? ` (${outcome.notes.length} AI change${outcome.notes.length === 1 ? "" : "s"} skipped)` : ""}`,
+                }
               : { text: `– ${label}: skipped, ${outcome.reason}` },
           );
         } catch (error) {
           if (controller.signal.aborted) break;
-          entries.push({ text: `✗ ${label}: ${error instanceof Error ? error.message : String(error)}`, error: true });
+          entries.push({
+            text: `✗ ${label}: ${error instanceof Error ? error.message : String(error)}`,
+            error: true,
+          });
         }
         setLog([...entries]);
       }
-      if (controller.signal.aborted) entries.push({ text: "Stopped. Clips already saved are kept." });
+      if (controller.signal.aborted)
+        entries.push({ text: "Stopped. Clips already saved are kept." });
       setLog([...entries]);
     } finally {
       abortRef.current = null;
@@ -101,7 +145,11 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
   return (
     <VStack align="stretch" gap={2}>
       <HStack gap={3} flexWrap="wrap">
-        <OutlinedActionButton startIcon={<Layers size={16} />} onClick={() => setOpen((value) => !value)} disabled={Boolean(status)}>
+        <OutlinedActionButton
+          startIcon={<Layers size={16} />}
+          onClick={() => setOpen((value) => !value)}
+          disabled={Boolean(status)}
+        >
           Edit all clips
         </OutlinedActionButton>
         <Text fontSize="xs" color={theme.text.muted}>
@@ -111,19 +159,49 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
         </Text>
       </HStack>
       {open ? (
-        <VStack align="stretch" gap={2} p={3} borderRadius="md" bg="rgba(0,0,0,0.2)">
-          <label style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
-            <input type="checkbox" checked={useAuto} onChange={(e) => setUseAuto(e.target.checked)} style={{ accentColor: clipperTheme.accent }} />
+        <VStack
+          align="stretch"
+          gap={2}
+          p={3}
+          borderRadius="md"
+          bg="rgba(0,0,0,0.2)"
+        >
+          <label
+            style={{
+              fontSize: 13,
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={useAuto}
+              onChange={(e) => setUseAuto(e.target.checked)}
+              style={{ accentColor: clipperTheme.accent }}
+            />
             Auto edit
           </label>
           {useAuto ? (
             <HStack gap={3} flexWrap="wrap" pl={5}>
               {STEP_LABELS.map(([key, label]) => (
-                <label key={key} style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center", cursor: "pointer" }}>
+                <label
+                  key={key}
+                  style={{
+                    fontSize: 12,
+                    display: "flex",
+                    gap: 4,
+                    alignItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={steps[key]}
-                    onChange={(e) => setSteps({ ...steps, [key]: e.target.checked })}
+                    onChange={(e) =>
+                      setSteps({ ...steps, [key]: e.target.checked })
+                    }
                     style={{ accentColor: clipperTheme.accent }}
                   />
                   {label}
@@ -132,22 +210,41 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
             </HStack>
           ) : null}
           {templates.length ? (
-            <label style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
-              Template
+            <label
+              style={{
+                fontSize: 13,
+                display: "flex",
+                gap: 6,
+                alignItems: "center",
+              }}
+            >
+              Look
               <select
                 value={templateId}
                 onChange={(e) => setTemplateId(e.target.value)}
                 aria-label="Template for every clip"
-                style={{ background: "rgba(0,0,0,0.35)", color: "inherit", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "3px 6px", fontSize: 13 }}
+                style={{
+                  background: "rgba(0,0,0,0.35)",
+                  color: "inherit",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 6,
+                  padding: "3px 6px",
+                  fontSize: 13,
+                }}
               >
                 <option value="">None</option>
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name}
+                    {t.builtIn ? `Trending: ${t.name}` : t.name}
                   </option>
                 ))}
               </select>
             </label>
+          ) : null}
+          {template?.description ? (
+            <span style={{ fontSize: 12, opacity: 0.7 }}>
+              {template.description}
+            </span>
           ) : null}
           <textarea
             value={instruction}
@@ -179,7 +276,8 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
                 <HStack gap={2}>
                   <Spinner size="xs" />
                   <Text>
-                    {status.index + 1}/{status.total} · {Math.round(status.ratio * 100)}%
+                    {status.index + 1}/{status.total} ·{" "}
+                    {Math.round(status.ratio * 100)}%
                   </Text>
                 </HStack>
               ) : (
@@ -187,7 +285,12 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
               )}
             </Button>
             {status ? (
-              <OutlinedActionButton tone="danger" onClick={() => abortRef.current?.abort()} h="32px" fontSize="xs">
+              <OutlinedActionButton
+                tone="danger"
+                onClick={() => abortRef.current?.abort()}
+                h="32px"
+                fontSize="xs"
+              >
                 Stop
               </OutlinedActionButton>
             ) : null}
@@ -200,7 +303,11 @@ export const ClipperBatchEdit: React.FC<ClipperBatchEditProps> = ({ projectId, e
           {log.length ? (
             <Box maxH="160px" overflowY="auto">
               {log.map((entry, index) => (
-                <Text key={index} fontSize="xs" color={entry.error ? theme.status.danger : theme.text.muted}>
+                <Text
+                  key={index}
+                  fontSize="xs"
+                  color={entry.error ? theme.status.danger : theme.text.muted}
+                >
                   {entry.text}
                 </Text>
               ))}
