@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../../../shared/utils/platform.util", () => ({ isTauri: () => false }));
-import { listLocalModels, pickDefaultLocalModel, requestLocalEdit } from "./ai-editor-local.util";
+import { listLocalModels, pickDefaultLocalModel, requestLocalEdit, unloadLocalModels } from "./ai-editor-local.util";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -29,5 +29,19 @@ describe("local AI", () => {
     vi.stubGlobal("fetch", fetchMock);
     expect(await requestLocalEdit("m", [{ role: "user", content: "hi" }])).toBe("{}");
     expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe("http://localhost:1234/v1/chat/completions");
+  });
+  it("frees the graphics card by unloading Ollama's loaded models", async () => {
+    const calls: Array<{ url: string; body?: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, body: init?.body as string | undefined });
+        return new Response(url.endsWith("/api/ps") ? JSON.stringify({ models: [{ model: "mistral-small:24b" }] }) : "{}");
+      }),
+    );
+    await unloadLocalModels();
+    expect(calls[0]!.url).toBe("http://localhost:11434/api/ps");
+    expect(calls[1]!.url).toBe("http://localhost:11434/api/generate");
+    expect(JSON.parse(calls[1]!.body!)).toEqual({ model: "mistral-small:24b", keep_alive: 0 });
   });
 });

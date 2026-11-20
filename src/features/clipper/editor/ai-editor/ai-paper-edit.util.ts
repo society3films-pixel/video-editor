@@ -365,6 +365,9 @@ export function parsePaperEdit(
   };
 }
 
+/** Above this (about 15 minutes of talking), a local model shortlists in sections first. */
+const LOCAL_STORY_TOKENS = 8000;
+
 export async function buildPaperEdit(
   choice: AiChoice,
   words: readonly WordCue[],
@@ -378,7 +381,10 @@ export async function buildPaperEdit(
   let lines = transcriptLines(words, quietStretches(words));
   const budget = transcriptBudget(choice);
   const total = estimateTokens(formatLines(lines));
-  if (total > budget) {
+  // A local model builds a better story from a shortlist than from a whole hour at once.
+  const shortlistAbove =
+    choice.provider === "local" ? LOCAL_STORY_TOKENS : budget;
+  if (total > shortlistAbove) {
     options.onProgress?.("Shortlisting the best passages");
     const spokenMinutes = (words[words.length - 1]!.end - words[0]!.start) / 60;
     // Keep about three times the target, so the story still has choices.
@@ -389,7 +395,8 @@ export async function buildPaperEdit(
     lines = await shortlistLines(
       choice,
       lines,
-      Math.round(budget * 0.8),
+      // ~10-minute sections for a local model, so each passage gets its attention.
+      choice.provider === "local" ? 6000 : Math.round(budget * 0.8),
       share,
       focus,
       options.signal,

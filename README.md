@@ -41,6 +41,7 @@ Free, open-source Windows desktop app for turning long videos into short, platfo
   - **Long-form draft from a shoot**: a folder of cameras, recorder files and B-roll becomes a synced, transcribed story: 1. check files and sync, 2. shape the story, 3. finish in Premiere/Resolve or render an MP4 here.
   - **Watch a folder**: new videos dropped in a folder become projects automatically.
 - **Trending looks**: in the clip editor (Edit → Looks and templates) or Edit all clips, one click sets a current short-form style: Viral talking head, One word at a time, Podcast clip, Emoji pop, Kinetic captions, Karaoke lyrics, Live performance, Cinematic story, Clean and minimal (captions, colour, jump cuts, punch-ins, sound effects, hook, progress bar). Save your own tweaks as a template.
+- **Running it all locally** (e.g. an RTX 3090 Ti, Ollama with a ~20-30B model at 32k context, Parakeet on the GPU): the app unloads the Ollama model whenever the graphics card is needed next (speech-to-text, face detection, rendering), reads three files at a time, and has a local model work through an hour of interview in ~10-minute sections.
 - **Publish**: send exports to your channels (and set up channels and owners).
 - **Settings**: General (updates, speech-to-text), AI (the model every AI feature uses, local or cloud), Integrations, MCP.
 

@@ -198,7 +198,11 @@ describe("folder draft", () => {
     }
     expect(stack).toEqual([]);
     expect(xml.match(/<clipitem/g)).toHaveLength(
-      t.video.length + t.broll.length + t.audio.length + t.scratch.length + t.angles.reduce((n, a) => n + a.clips.length, 0),
+      t.video.length +
+        t.broll.length +
+        t.audio.length +
+        t.scratch.length +
+        t.angles.reduce((n, a) => n + a.clips.length, 0),
     );
   });
 
@@ -445,5 +449,24 @@ describe("folder draft", () => {
     expect(xml.match(/<enabled>FALSE<\/enabled>/g)!.length).toBe(
       4 + t.scratch.length,
     );
+  });
+});
+
+describe("face analysis jobs", () => {
+  it("merges nearby parts on the same camera, not far ones or other cameras", async () => {
+    const { mergeNearbyJobs } = await import("./folder-draft-speaker.util");
+    const A = { path: "A" };
+    const B = { path: "B" };
+    const jobs = mergeNearbyJobs([
+      { camera: A, a: 100, b: 130 },
+      { camera: A, a: 150, b: 200 },
+      { camera: A, a: 900, b: 950 },
+      { camera: B, a: 120, b: 160 },
+    ]);
+    expect(jobs.map((j) => [j.camera.path, j.a, j.b])).toEqual([
+      ["A", 100, 200],
+      ["A", 900, 950],
+      ["B", 120, 160],
+    ]);
   });
 });

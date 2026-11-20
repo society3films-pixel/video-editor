@@ -10,6 +10,7 @@ import { applyTemplate, type EditTemplate } from "./edit-templates.util";
 import { measureClipColor } from "./color-measure.util";
 import { saveEditedClipperExport } from "./save-edited-export.util";
 import { sourceResultFor } from "./source-result.util";
+import { unloadLocalModels } from "./ai-editor/ai-editor-local.util";
 
 export interface LookRenderOutcome {
   saved: number;
@@ -36,6 +37,8 @@ export async function renderClipsWithLook(
   );
   const failed: string[] = [];
   let saved = 0;
+  // Rendering uses the graphics card: free it from a local AI model first.
+  await unloadLocalModels();
   for (const [index, job] of jobs.entries()) {
     if (run.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const source = getSource(job.clipIndex, job.formatId);

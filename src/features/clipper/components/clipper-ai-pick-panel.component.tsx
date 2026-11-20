@@ -13,6 +13,7 @@ import {
   resolveAiChoice,
   type AiChoice,
 } from "../editor/ai-editor/ai-choice.util";
+import { unloadLocalModels } from "../editor/ai-editor/ai-editor-local.util";
 import {
   clipPicksToPayload,
   pickClipsWithAi,
@@ -176,6 +177,8 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({
       const picked = await pickClipsWithAi(choice, rangeWords, options, {
         onProgress: setStep,
       });
+      // Free the graphics card for previews and rendering.
+      if (choice.provider === "local") void unloadLocalModels();
       if (picked.clips.length === 0)
         throw new Error(
           "The AI didn't find clips that fit those lengths. Try a wider range.",
@@ -362,8 +365,8 @@ export const ClipperAiPickPanel: React.FC<ClipperAiPickPanelProps> = ({
             <Text fontSize="xs" color={theme.text.muted}>
               The AI builds a story from this video (best answers in a flowing
               order, performances between topics) and saves it as one AI clip to
-              render in 16:9 and fine-tune. For a shoot with several cameras and a
-              recorder, use Long-form draft from a shoot on the home page.
+              render in 16:9 and fine-tune. For a shoot with several cameras and
+              a recorder, use Long-form draft from a shoot on the home page.
             </Text>
             <HStack
               gap={2}

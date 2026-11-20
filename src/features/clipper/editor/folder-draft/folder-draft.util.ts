@@ -231,36 +231,50 @@ export async function analyzeShoot(
   const listed = await listShootFolder(dir);
   if (!listed.length)
     throw new Error("There are no video or audio files in this folder.");
-  const items: FolderMedia[] = [];
   const envelopes = new Map<string, Float32Array>();
-  for (const [index, file] of listed.entries()) {
-    const folder = file.folder ?? "";
-    const shown = folder ? `${folder}/${file.name}` : file.name;
-    onProgress(`Listening to ${shown}`, index / listed.length);
-    const info = await probe(file.path, file.name).catch(() => null);
-    if (!info) continue;
-    let profile = { speech: 0, music: 0, silent: 1 };
-    if (info.hasAudio) {
-      const levels = await frameLevels(
-        fileFor({ path: file.path, name: file.name }),
-      );
-      profile = soundProfile(levels);
-      // B-roll (by its folder) isn't lined up: it's placed as cutaways.
-      if (roleFromFolder(folder) !== "broll" || !info.hasVideo)
-        envelopes.set(file.path, syncFeature(levels));
+  // Three files at a time: the sound is decoded natively (FFmpeg), one CPU thread per file.
+  const results: Array<FolderMedia | null> = new Array(listed.length).fill(
+    null,
+  );
+  let next = 0;
+  let finished = 0;
+  const worker = async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= listed.length) return;
+      const file = listed[index]!;
+      const folder = file.folder ?? "";
+      const shown = folder ? `${folder}/${file.name}` : file.name;
+      onProgress(`Listening to ${shown}`, finished / listed.length);
+      const info = await probe(file.path, file.name).catch(() => null);
+      if (info) {
+        let profile = { speech: 0, music: 0, silent: 1 };
+        if (info.hasAudio) {
+          const levels = await frameLevels(
+            fileFor({ path: file.path, name: file.name }),
+          );
+          profile = soundProfile(levels);
+          // B-roll (by its folder) isn't lined up: it's placed as cutaways.
+          if (roleFromFolder(folder) !== "broll" || !info.hasVideo)
+            envelopes.set(file.path, syncFeature(levels));
+        }
+        const base = { ...info, speech: profile.speech, music: profile.music };
+        results[index] = {
+          path: file.path,
+          name: file.name,
+          folder,
+          ...base,
+          role: classifyWithFolder(base, folder),
+          offsetSec: null,
+          syncScore: 0,
+          timecodeSec: await readTimecode(file.path),
+        };
+      }
+      finished++;
     }
-    const base = { ...info, speech: profile.speech, music: profile.music };
-    items.push({
-      path: file.path,
-      name: file.name,
-      folder,
-      ...base,
-      role: classifyWithFolder(base, folder),
-      offsetSec: null,
-      syncScore: 0,
-      timecodeSec: await readTimecode(file.path),
-    });
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, listed.length) }, worker));
+  const items = results.filter((item): item is FolderMedia => item !== null);
   const master = chooseMaster(items);
   if (!master) return { items, master: null };
   master.offsetSec = 0;

@@ -11,6 +11,7 @@ import {
   localRecordPut,
 } from "../../../../shared/persistence/local-database.util";
 import { resolveAiChoice, describeAiChoice } from "../ai-editor/ai-choice.util";
+import { unloadLocalModels } from "../ai-editor/ai-editor-local.util";
 import {
   buildPaperEdit,
   type PaperEdit,
@@ -191,6 +192,8 @@ export async function renderFolderDraft(
 ): Promise<{ path: string; via: string }> {
   const timeline = draftTimeline(draft);
   const name = `${draft.base}.mp4`;
+  // Rendering uses the graphics card's encoder: free it from a local AI model first.
+  await unloadLocalModels();
   const sequence = draftSequence(timeline, draftMaster(draft));
   const captions = options.captions
     ? draftCaptions(draft.story, draft.words)
@@ -280,6 +283,8 @@ export async function runFolderDraft(
           .sort((a, b) => a.offsetSec! - b.offsetSec!),
       ]
     : [master];
+  // Speech-to-text runs on the graphics card too: free it from a model left loaded earlier.
+  await unloadLocalModels();
   const settings = loadClipperSettings();
   const engine =
     settings.transcription.engine === "groq" ||
@@ -359,6 +364,9 @@ export async function runFolderDraft(
         onProgress(`${step} (${describeAiChoice(choice)})`, 0.8),
     },
   );
+
+  // The story is written: give the graphics card back for what comes next (faces, rendering).
+  if (choice.provider === "local") await unloadLocalModels();
 
   onProgress("Writing the timeline", 0.95);
   const result = await exportFolderDraft({

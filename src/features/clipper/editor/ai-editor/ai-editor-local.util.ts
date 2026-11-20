@@ -206,3 +206,43 @@ export async function localAiAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Frees the graphics card: asks Ollama to unload every model it has loaded (it otherwise keeps
+ * one in video memory for 5 minutes after use, ~15-20 GB for a 20-30B model). Called before
+ * steps that need the card (transcription, face detection, rendering). Other servers: no-op.
+ */
+export async function unloadLocalModels(): Promise<void> {
+  const base = ollamaBase();
+  if (!base) return;
+  const send = (path: string, body?: unknown) =>
+    isTauri()
+      ? invoke<string>("local_ai_request", {
+          url: `${base}${path}`,
+          body: body === undefined ? null : JSON.stringify(body),
+        })
+      : fetch(
+          `${base}${path}`,
+          body === undefined
+            ? undefined
+            : {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              },
+        ).then((r) => r.text());
+  try {
+    const running = JSON.parse(await send("/api/ps")) as {
+      models?: Array<{ name?: string; model?: string }>;
+    };
+    for (const model of running.models ?? []) {
+      const name = model.model ?? model.name;
+      if (name)
+        await send("/api/generate", { model: name, keep_alive: 0 }).catch(
+          () => {},
+        );
+    }
+  } catch {
+    // Ollama not running or older: nothing to free.
+  }
+}
