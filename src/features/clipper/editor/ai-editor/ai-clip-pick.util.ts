@@ -76,6 +76,49 @@ export function buildClipPickMessages(
 }
 
 /** Validates the model's picks against the transcript and requested lengths. */
+const isSentenceEnd = (word: WordCue | undefined) =>
+  Boolean(word && /[.!?]["”')]?$/.test(word.text.trim()));
+
+/**
+ * Brings a one-part clip inside the requested length instead of throwing it away: too long →
+ * ends at the last sentence end that fits (or the last word that fits); too short → runs on to
+ * the next sentence end that reaches the minimum. Models count words, not seconds.
+ */
+export function fitClipLength(
+  segment: { from: number; to: number },
+  words: readonly WordCue[],
+  minSec: number,
+  maxSec: number,
+): { from: number; to: number } {
+  const span = (to: number) => words[to]!.end - words[segment.from]!.start;
+  let { to } = segment;
+  if (span(to) > maxSec) {
+    let fallback = -1;
+    let sentence = -1;
+    for (let i = segment.from; i <= to && span(i) <= maxSec; i++) {
+      fallback = i;
+      if (isSentenceEnd(words[i])) sentence = i;
+    }
+    // A sentence end is worth losing a little length for; otherwise cut at the last word that fits.
+    to =
+      sentence >= 0 && span(sentence) >= minSec * 0.8
+        ? sentence
+        : Math.max(segment.from, fallback);
+  } else if (span(to) < minSec) {
+    for (
+      let i = to + 1;
+      i < Math.min(words.length, to + 400) && span(i) <= maxSec;
+      i++
+    ) {
+      if (span(i) >= minSec && isSentenceEnd(words[i])) {
+        to = i;
+        break;
+      }
+    }
+  }
+  return { from: segment.from, to };
+}
+
 export function parseClipPicks(
   reply: string,
   words: readonly WordCue[],
@@ -115,7 +158,12 @@ export function parseClipPicks(
       )
       .map((s) => ({ from: s.from as number, to: s.to as number }))
       .sort((a, b) => a.from - b.from)
-      .filter((s, i, list) => i === 0 || s.from > list[i - 1]!.to);
+      .filter((s, i, list) => i === 0 || s.from > list[i - 1]!.to)
+      .map((s, _i, list) =>
+        list.length === 1
+          ? fitClipLength(s, words, options.minSec, options.maxSec)
+          : s,
+      );
     const durationSec = segments.reduce(
       (sum, s) => sum + (words[s.to]!.end - words[s.from]!.start),
       0,
@@ -178,6 +226,9 @@ export function clipPicksToPayload(
  * longer one is read in sections (candidates from each), then the candidates are ranked against
  * each other in one last request, so a two-hour video works with a local model too.
  */
+/** About 10 minutes of talking per request for a local model. */
+const LOCAL_SECTION_TOKENS = 5500;
+
 export async function pickClipsWithAi(
   choice: AiChoice,
   words: readonly WordCue[],
@@ -187,7 +238,12 @@ export async function pickClipsWithAi(
   if (words.length < 20)
     throw new Error("The transcript is too short to pick clips from.");
   const lines = transcriptLines(words, []);
-  const budget = transcriptBudget(choice);
+  // A local model judges a whole interview at once poorly (it favours the start and end and
+  // skims the middle), so it reads ~10-minute sections and the candidates are ranked after.
+  const budget =
+    choice.provider === "local"
+      ? LOCAL_SECTION_TOKENS
+      : transcriptBudget(choice);
   const read = (count: number) => (value: unknown) => {
     const parsed = parseClipPicks(JSON.stringify(value), words, {
       ...options,
@@ -211,7 +267,7 @@ export async function pickClipsWithAi(
   const sections: TranscriptLine[][] = [];
   let section: TranscriptLine[] = [];
   let size = 0;
-  const limit = Math.round(budget * 0.8);
+  const limit = budget;
   for (const line of lines) {
     const tokens = estimateTokens(line.text) + 8;
     if (size + tokens > limit && section.length) {
@@ -224,8 +280,8 @@ export async function pickClipsWithAi(
   }
   if (section.length) sections.push(section);
   const perSection = Math.max(
-    2,
-    Math.ceil((options.count * 2) / sections.length),
+    3,
+    Math.ceil((options.count * 2.5) / sections.length),
   );
   const candidates: PickedClip[] = [];
   let rejected = 0;
@@ -267,22 +323,21 @@ export async function pickClipsWithAi(
   run.onProgress?.(
     `Choosing the best ${options.count} of ${candidates.length}`,
   );
+  // Each candidate with what's actually said (up to ~120 words), so it's judged on its content.
   const summary = candidates
     .map((clip, i) => {
-      const text = words
-        .slice(
-          clip.segments[0]!.from,
-          Math.min(clip.segments[0]!.to + 1, clip.segments[0]!.from + 40),
-        )
-        .map((w) => w.text)
-        .join(" ");
-      return `C${i + 1} (${Math.round(clip.durationSec)}s${clip.score ? `, rated ${clip.score}` : ""}): ${clip.title} — "${text}…"`;
+      const said = clip.segments.flatMap((segment) =>
+        words.slice(segment.from, segment.to + 1).map((w) => w.text),
+      );
+      const text =
+        said.length > 120 ? `${said.slice(0, 120).join(" ")}…` : said.join(" ");
+      return `C${i + 1} (${Math.round(clip.durationSec)}s${clip.score ? `, rated ${clip.score}` : ""}) ${clip.title}: "${text}"`;
     })
-    .join("\n");
+    .join("\n\n");
   const rankMessages: Array<{ role: "system" | "user"; content: string }> = [
     {
       role: "system",
-      content: `You are an editor choosing which short clips to post. Rank by how well each would do on its own on TikTok, Reels and Shorts (hook, clarity, payoff)${options.focus.trim() ? `, with this focus: ${options.focus.trim()}` : ""}. Reply with JSON only: {"best": ["C3", "C1", ...]}.`,
+      content: `You are an editor choosing which short clips to post. Rank by how well each would do on its own on TikTok, Reels and Shorts: a strong first line (hook), one clear idea or story, a payoff at the end, and making sense without the rest of the video${options.focus.trim() ? `; focus: ${options.focus.trim()}` : ""}. Prefer variety: don't choose several clips that make the same point. Reply with JSON only: {"best": ["C3", "C1", ...]}.`,
     },
     {
       role: "user",

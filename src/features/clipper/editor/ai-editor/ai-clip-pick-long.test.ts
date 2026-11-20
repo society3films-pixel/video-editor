@@ -60,4 +60,43 @@ describe("AI clip picking on a long video", () => {
     // Every request fits a local model's context (about 18k tokens ≈ 65k characters, plus instructions).
     expect(Math.max(...sizes)).toBeLessThan(70000);
   });
+
+  it("reads a 45-minute interview in ~10-minute sections on a local model", async () => {
+    const interview = Array.from({ length: 7000 }, (_, i) => ({
+      text: i % 12 === 11 ? `w${i}.` : `w${i}`,
+      start: i * 0.4,
+      end: i * 0.4 + 0.3,
+    }));
+    let sections = 0;
+    requestEdit.mockImplementation(
+      async (
+        _p: unknown,
+        _m: unknown,
+        messages: Array<{ content: string }>,
+      ) => {
+        const text = messages[1]!.content;
+        if (text.includes('{"best"'))
+          return JSON.stringify({ best: ["C1", "C2"] });
+        sections++;
+        const first = /\[(\d+)-(\d+)\]/.exec(text)!;
+        return JSON.stringify({
+          clips: [
+            {
+              title: "c",
+              score: 7,
+              segments: [{ from: Number(first[1]), to: Number(first[1]) + 60 }],
+            },
+          ],
+        });
+      },
+    );
+    const picked = await pickClipsWithAi(local, interview, {
+      count: 2,
+      minSec: 15,
+      maxSec: 40,
+      focus: "",
+    });
+    expect(sections).toBeGreaterThanOrEqual(3);
+    expect(picked.clips).toHaveLength(2);
+  });
 });

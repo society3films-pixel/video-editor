@@ -4,15 +4,40 @@ vi.hoisted(() => {
   (globalThis as { window?: unknown }).window ??= globalThis;
 });
 
-import { applyAiEditPlan, parseAiEditReply, wordSpan, type AiEditContext } from "./ai-editor-ops.util";
-import { buildAiEditMessages, formatIndexedTranscript } from "./ai-editor-prompt.util";
+import {
+  applyAiEditPlan,
+  parseAiEditReply,
+  wordSpan,
+  type AiEditContext,
+} from "./ai-editor-ops.util";
+import {
+  buildAiEditMessages,
+  formatIndexedTranscript,
+} from "./ai-editor-prompt.util";
 import { pickDefaultModel } from "./ai-editor-client.util";
 import { createInitialClipEdit, getOutputDuration } from "../clip-edit.util";
 import type { WordCue } from "../../lib/media/transcription-export.util";
 
 // "Hi there. Um, the weather is nice. Here is the big news." at 0.5 s per word.
-const texts = ["Hi", "there.", "Um,", "the", "weather", "is", "nice.", "Here", "is", "the", "big", "news."];
-const words: WordCue[] = texts.map((text, i) => ({ text, start: i * 0.5, end: i * 0.5 + 0.4 }));
+const texts = [
+  "Hi",
+  "there.",
+  "Um,",
+  "the",
+  "weather",
+  "is",
+  "nice.",
+  "Here",
+  "is",
+  "the",
+  "big",
+  "news.",
+];
+const words: WordCue[] = texts.map((text, i) => ({
+  text,
+  start: i * 0.5,
+  end: i * 0.5 + 0.4,
+}));
 const duration = 6.2;
 const context: AiEditContext = {
   duration,
@@ -21,26 +46,40 @@ const context: AiEditContext = {
   aiShotBoundaries: [3],
   canChangeSource: true,
 };
-const base = () => ({ ...createInitialClipEdit(duration), framing: { keyframes: [], extraShotBoundaries: [] } });
+const base = () => ({
+  ...createInitialClipEdit(duration),
+  framing: { keyframes: [], extraShotBoundaries: [] },
+});
 
 describe("parsing the AI's reply", () => {
   it("reads JSON inside code fences and drops unknown operations", () => {
-    const plan = parseAiEditReply('Sure!\n```json\n{"summary":"Tightened it.","operations":[{"op":"remove_fillers"},{"op":"explode"}]}\n```');
+    const plan = parseAiEditReply(
+      'Sure!\n```json\n{"summary":"Tightened it.","operations":[{"op":"remove_fillers"},{"op":"explode"}]}\n```',
+    );
     expect(plan.summary).toBe("Tightened it.");
     expect(plan.operations).toEqual([{ op: "remove_fillers" }]);
   });
 
   it("explains unreadable replies", () => {
-    expect(() => parseAiEditReply("I can't do that")).toThrow(/didn't return an edit plan/);
+    expect(() => parseAiEditReply("I can't do that")).toThrow(
+      /didn't return an edit plan/,
+    );
   });
 });
 
 describe("applying operations", () => {
   it("cuts a sentence by word numbers, including the silence around it", () => {
-    const { edit, applied } = applyAiEditPlan(base(), { summary: "", operations: [{ op: "remove_words", from: 3, to: 6 }] }, context);
+    const { edit, applied } = applyAiEditPlan(
+      base(),
+      { summary: "", operations: [{ op: "remove_words", from: 3, to: 6 }] },
+      context,
+    );
     expect(applied[0]).toMatch(/Cut “the weather is nice\.”/);
     const span = wordSpan(words, 3, 6, duration);
-    expect(edit.segments.map((s) => [s.start, s.end])).toEqual([[0, span.start], [span.end, duration]]);
+    expect(edit.segments.map((s) => [s.start, s.end])).toEqual([
+      [0, span.start],
+      [span.end, duration],
+    ]);
   });
 
   it("trims to a range, removes fillers and punches in, in a safe order", () => {
@@ -58,16 +97,32 @@ describe("applying operations", () => {
     );
     expect(applied).toHaveLength(3);
     expect(edit.segments[0]!.start).toBeGreaterThan(words[2]!.end - 0.01); // "Um," gone along with the intro
-    expect(edit.segments.some((s) => s.zoom === 1.2 && s.start <= words[10]!.start && s.end >= words[11]!.end)).toBe(true);
+    expect(
+      edit.segments.some(
+        (s) =>
+          s.zoom === 1.2 &&
+          s.start <= words[10]!.start &&
+          s.end >= words[11]!.end,
+      ),
+    ).toBe(true);
   });
 
   it("places text in output time after cuts", () => {
     const { edit } = applyAiEditPlan(
       base(),
-      { summary: "", operations: [{ op: "remove_words", from: 0, to: 6 }, { op: "add_text", text: "Big news", from_word: 7, to_word: 11 }] },
+      {
+        summary: "",
+        operations: [
+          { op: "remove_words", from: 0, to: 6 },
+          { op: "add_text", text: "Big news", from_word: 7, to_word: 11 },
+        ],
+      },
       context,
     );
-    expect(edit.textOverlays[0]).toMatchObject({ text: "Big news", position: "top" });
+    expect(edit.textOverlays[0]).toMatchObject({
+      text: "Big news",
+      position: "top",
+    });
     expect(edit.textOverlays[0]!.start).toBeLessThan(0.5);
     expect(getOutputDuration(edit.segments)).toBeLessThan(3.5);
   });
@@ -88,7 +143,14 @@ describe("applying operations", () => {
     expect(applied).toEqual([]);
     expect(skipped).toHaveLength(3);
     expect(edit.segments).toHaveLength(1);
-    const noSource = applyAiEditPlan(base(), { summary: "", operations: [{ op: "set_captions_visible", visible: false }] }, { ...context, canChangeSource: false });
+    const noSource = applyAiEditPlan(
+      base(),
+      {
+        summary: "",
+        operations: [{ op: "set_captions_visible", visible: false }],
+      },
+      { ...context, canChangeSource: false },
+    );
     expect(noSource.skipped[0]).toMatch(/source video/);
   });
 
@@ -107,7 +169,10 @@ describe("applying operations", () => {
       context,
     );
     expect(applied).toHaveLength(4);
-    expect(edit.captionGroups![0]!.words.map((w) => w.text)).toEqual(["Hello", "there."]);
+    expect(edit.captionGroups![0]!.words.map((w) => w.text)).toEqual([
+      "Hello",
+      "there.",
+    ]);
     expect(edit.volume).toBe(1.4);
     expect(edit.fadeOutSec).toBe(3);
     expect(edit.framing!.keyframes).toHaveLength(1);
@@ -118,8 +183,14 @@ describe("applying operations", () => {
 
 describe("prompt and models", () => {
   it("numbers words and lists shots, captions and the current edit", () => {
-    expect(formatIndexedTranscript(words).split("\n")[0]).toBe("0.0s: [0] Hi [1] there.");
-    const [system, user] = buildAiEditMessages("cut the weather bit", base(), { ...context, shotBoundaries: [3], title: "News" });
+    expect(formatIndexedTranscript(words).split("\n")[0]).toBe(
+      "0.0s: [0] Hi [1] there.",
+    );
+    const [system, user] = buildAiEditMessages("cut the weather bit", base(), {
+      ...context,
+      shotBoundaries: [3],
+      title: "News",
+    });
     expect(system!.content).toMatch(/remove_words/);
     expect(user!.content).toMatch(/\[4\] weather/);
     expect(user!.content).toMatch(/Shots:\n0: 0\.0s-3\.0s\n1: 3\.0s-6\.2s/);
@@ -128,50 +199,121 @@ describe("prompt and models", () => {
 
   it("picks Claude Sonnet on OpenRouter and a large chat model on Groq", () => {
     expect(
-      pickDefaultModel("openrouter", ["openai/gpt-x", "anthropic/claude-haiku-5", "anthropic/claude-sonnet-4.5", "anthropic/claude-sonnet-5.5"]),
+      pickDefaultModel("openrouter", [
+        "openai/gpt-x",
+        "anthropic/claude-haiku-5",
+        "anthropic/claude-sonnet-4.5",
+        "anthropic/claude-sonnet-5.5",
+      ]),
     ).toBe("anthropic/claude-sonnet-5.5");
-    expect(pickDefaultModel("groq", ["whisper-large-v3", "llama-3.1-8b-instant", "openai/gpt-oss-120b"])).toBe("openai/gpt-oss-120b");
+    expect(
+      pickDefaultModel("groq", [
+        "whisper-large-v3",
+        "llama-3.1-8b-instant",
+        "openai/gpt-oss-120b",
+      ]),
+    ).toBe("openai/gpt-oss-120b");
     expect(pickDefaultModel("groq", ["whisper-large-v3"])).toBeNull();
   });
 });
 
 describe("Claude provider", () => {
   it("defaults to Claude Opus 5.5 when the account has it", async () => {
-    const { pickDefaultClaudeModel } = await import("./ai-editor-anthropic.util");
-    expect(pickDefaultClaudeModel(["claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5"])).toBe("claude-opus-5-5");
-    expect(pickDefaultClaudeModel(["claude-sonnet-5-5", "claude-opus-5"])).toBe("claude-opus-5");
+    const { pickDefaultClaudeModel } =
+      await import("./ai-editor-anthropic.util");
+    expect(
+      pickDefaultClaudeModel([
+        "claude-haiku-5-5",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+      ]),
+    ).toBe("claude-opus-5-5");
+    expect(pickDefaultClaudeModel(["claude-sonnet-5-5", "claude-opus-5"])).toBe(
+      "claude-opus-5",
+    );
     expect(pickDefaultClaudeModel([])).toBeNull();
   });
 });
 
 describe("AI clip picking", () => {
   // 40 words, one per second.
-  const longWords: WordCue[] = Array.from({ length: 40 }, (_, i) => ({ text: i % 10 === 9 ? `w${i}.` : `w${i}`, start: i, end: i + 0.8 }));
+  const longWords: WordCue[] = Array.from({ length: 40 }, (_, i) => ({
+    text: i % 10 === 9 ? `w${i}.` : `w${i}`,
+    start: i,
+    end: i + 0.8,
+  }));
   const options = { count: 3, minSec: 8, maxSec: 15, focus: "" };
 
   it("keeps valid, non-overlapping picks of the right length", async () => {
-    const { parseClipPicks, clipPicksToPayload } = await import("./ai-clip-pick.util");
+    const { parseClipPicks, clipPicksToPayload } =
+      await import("./ai-clip-pick.util");
     const reply = JSON.stringify({
       clips: [
-        { title: "Good one", reason: "Strong hook", segments: [{ from: 0, to: 9 }] },
+        {
+          title: "Good one",
+          reason: "Strong hook",
+          segments: [{ from: 0, to: 9 }],
+        },
         { title: "Overlaps", segments: [{ from: 5, to: 15 }] },
         { title: "Too short", segments: [{ from: 20, to: 21 }] },
         { title: "Bad index", segments: [{ from: 30, to: 99 }] },
-        { title: "Supercut", segments: [{ from: 30, to: 34 }, { from: 20, to: 25 }] },
+        {
+          title: "Supercut",
+          segments: [
+            { from: 30, to: 34 },
+            { from: 20, to: 25 },
+          ],
+        },
       ],
     });
     const { clips, rejected } = parseClipPicks(reply, longWords, options);
-    expect(clips.map((c) => c.title)).toEqual(["Good one", "Supercut"]);
+    // "Too short" is run on to the next sentence end (instead of being dropped), which the
+    // supercut then overlaps.
+    expect(clips.map((c) => c.title)).toEqual(["Good one", "Too short"]);
     expect(rejected).toBe(3);
-    expect(clips[1]!.segments).toEqual([{ from: 20, to: 25 }, { from: 30, to: 34 }]);
+    expect(clips[1]!.segments).toEqual([{ from: 20, to: 29 }]);
     const payload = clipPicksToPayload(clips, longWords, 4);
-    expect(payload[0]).toMatchObject({ index: 4, startSec: 0, endSec: 9.8, label: "Good one" });
-    expect(payload[1]!.segments[1]).toMatchObject({ orderIndex: 1, wordStartIdx: 30, wordEndIdx: 34, startSec: 30, endSec: 34.8 });
+    expect(payload[0]).toMatchObject({
+      index: 4,
+      startSec: 0,
+      endSec: 9.8,
+      label: "Good one",
+    });
+    expect(payload[1]!.segments[0]).toMatchObject({
+      orderIndex: 0,
+      wordStartIdx: 20,
+      wordEndIdx: 29,
+      startSec: 20,
+      endSec: 29.8,
+    });
+    // Supercuts keep their parts as given.
+    const supercut = parseClipPicks(
+      JSON.stringify({
+        clips: [
+          {
+            title: "S",
+            segments: [
+              { from: 30, to: 34 },
+              { from: 20, to: 25 },
+            ],
+          },
+        ],
+      }),
+      longWords,
+      options,
+    );
+    expect(supercut.clips[0]!.segments).toEqual([
+      { from: 20, to: 25 },
+      { from: 30, to: 34 },
+    ]);
   });
 
   it("asks for the requested count, lengths and focus", async () => {
     const { buildClipPickMessages } = await import("./ai-clip-pick.util");
-    const [, user] = buildClipPickMessages(longWords, { ...options, focus: "funny bits" });
+    const [, user] = buildClipPickMessages(longWords, {
+      ...options,
+      focus: "funny bits",
+    });
     expect(user!.content).toMatch(/up to 3 clips, each 8-15 seconds/);
     expect(user!.content).toMatch(/Focus: funny bits/);
     expect(user!.content).toMatch(/\[\d+-39\] \d+:\d+ .*w39\./);
@@ -180,18 +322,57 @@ describe("AI clip picking", () => {
 
 describe("AI social metadata", () => {
   it("parses copy, normalises hashtags and only fills empty fields unless overwriting", async () => {
-    const { parseSocialMetadata, socialPatchFor } = await import("./ai-social-metadata.util");
+    const { parseSocialMetadata, socialPatchFor } =
+      await import("./ai-social-metadata.util");
     const draft = parseSocialMetadata(
       '```json\n{"title":"This changed everything","short_description":"One line.","description":"Two lines.","hashtags":["#podcast","money tips","podcast"]}\n```',
     );
     expect(draft.hashtags).toBe("#podcast #moneytips");
-    const result = { socialTitle: "Mine", socialDescription: "", socialHashtags: undefined } as never;
+    const result = {
+      socialTitle: "Mine",
+      socialDescription: "",
+      socialHashtags: undefined,
+    } as never;
     expect(socialPatchFor(result, draft, false)).toEqual({
       socialShortDescription: "One line.",
       socialDescription: "Two lines.",
       socialHashtags: "#podcast #moneytips",
     });
-    expect(socialPatchFor(result, draft, true).socialTitle).toBe("This changed everything");
-    expect(() => parseSocialMetadata('{"description":"x"}')).toThrow(/no title/);
+    expect(socialPatchFor(result, draft, true).socialTitle).toBe(
+      "This changed everything",
+    );
+    expect(() => parseSocialMetadata('{"description":"x"}')).toThrow(
+      /no title/,
+    );
+  });
+});
+
+describe("fitting AI clips to the requested length", () => {
+  const words: WordCue[] = Array.from({ length: 200 }, (_, i) => ({
+    text: i % 10 === 9 ? `w${i}.` : `w${i}`,
+    start: i,
+    end: i + 0.8,
+  }));
+  it("trims a long clip back to the last sentence end that fits", async () => {
+    const { fitClipLength } = await import("./ai-clip-pick.util");
+    // 0-99 is 100 s; max 45 s → ends at w39 (sentence end, 39.8 s).
+    expect(fitClipLength({ from: 0, to: 99 }, words, 20, 45)).toEqual({
+      from: 0,
+      to: 39,
+    });
+  });
+  it("runs a short clip on to the next sentence end that reaches the minimum", async () => {
+    const { fitClipLength } = await import("./ai-clip-pick.util");
+    expect(fitClipLength({ from: 50, to: 55 }, words, 20, 45)).toEqual({
+      from: 50,
+      to: 79,
+    });
+  });
+  it("leaves a clip of the right length alone", async () => {
+    const { fitClipLength } = await import("./ai-clip-pick.util");
+    expect(fitClipLength({ from: 10, to: 39 }, words, 20, 45)).toEqual({
+      from: 10,
+      to: 39,
+    });
   });
 });
