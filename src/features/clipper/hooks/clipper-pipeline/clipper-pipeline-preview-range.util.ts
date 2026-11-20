@@ -6,6 +6,7 @@ import {
 import {
   fetchClipperClips,
   fetchDisabledCollageRegions,
+  fetchClipFraming,
   saveClipperClips,
 } from "../../persistence/clipper-clips-api.util";
 import { saveClipperRangeWords } from "../../persistence/clipper-range-words-api.util";
@@ -85,12 +86,14 @@ export async function preparePreviewFromRange(
   const rangeDuration = end - snappedStart;
   const segmentLength = normalizeAutoPartsSegmentLengthSec(metadata.autoPartsSegmentLengthSec);
 
-  const [autoPartsDbClips, aiDbClips, manualDbClips, fetchedDisabledRegionIds] = await Promise.all([
+  const [autoPartsDbClips, aiDbClips, manualDbClips, fetchedDisabledRegionIds, fetchedClipFraming] = await Promise.all([
     fetchClipperClips(options.projectId, "auto-parts").catch(() => []),
     fetchClipperClips(options.projectId, "ai").catch(() => []),
     fetchClipperClips(options.projectId, "manual").catch(() => []),
     fetchDisabledCollageRegions(options.projectId).catch(() => []),
+    fetchClipFraming(options.projectId).catch(() => ({})),
   ]);
+  session.clipFraming = fetchedClipFraming;
   aiClipsMetaRef.current = aiDbClips;
   manualClipsMetaRef.current = manualDbClips;
   session.disabledCollageRegionIds = fetchedDisabledRegionIds;

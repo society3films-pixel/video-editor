@@ -26,7 +26,8 @@ function webDisplayPath(fileName: string, rootName?: string): string {
 
 function sanitizeExportFileName(fileName: string): string {
   const base = fileName.replace(/[/\\]/g, "_").replace(/\.\./g, "_");
-  return base.endsWith(".mp4") ? base : `${base}.mp4`;
+  // Videos, plus cover images and Premiere Pro project files (XML, captions, music) saved next to them.
+  return /\.(mp4|png|xml|fcpxml|srt|mp3|m4a|aac|wav|ogg|flac|opus)$/i.test(base) ? base : `${base}.mp4`;
 }
 
 async function createWebExportSink(

@@ -21,7 +21,7 @@ const PREVIEW_FORMAT =
   CLIPPER_FORMAT_DEFS.find((format) => format.aspectId === "9-16") ?? CLIPPER_FORMAT_DEFS[0];
 
 const MANUAL_CLIP_SELECT_HINT =
-  "Click two words in the transcript to choose where the clip starts and ends.";
+  "Click two words to choose where the clip starts and ends, or drag the time range under the video to set exact times (to keep a pause or music before or after the words).";
 const MANUAL_CLIP_WATCH_HINT =
   "Click a word in the transcript to jump to that moment.";
 
@@ -81,8 +81,9 @@ export function ClipperManualClipModal({
   });
 
   const handleSave = () => {
-    if (startIdx == null || endIdx == null) return;
-    onSave({ wordStartIdx: startIdx, wordEndIdx: endIdx });
+    const saved = range.savedRange();
+    if (!saved) return;
+    onSave(saved);
     onClose();
   };
 
@@ -93,6 +94,9 @@ export function ClipperManualClipModal({
       </Text>
       <Text fontSize="sm" color={clipperTheme.accentLight} fontWeight="semibold">
         · {formatDurationMmSs(clipLengthSec)}
+      </Text>
+      <Text fontSize="xs" color={theme.text.muted}>
+        {range.exactTimes ? "exact times" : "snapped to words"}
       </Text>
     </HStack>
   ) : (
@@ -110,7 +114,7 @@ export function ClipperManualClipModal({
     <StyledModal
       isOpen={isOpen}
       onClose={onClose}
-      title="Manual clip selection"
+      title="Clip start and end"
       description={modalHint}
       size="xl"
       contentWidth="min(calc(100vw - 64px), 1100px)"

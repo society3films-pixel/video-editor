@@ -60,6 +60,7 @@ export function useClipperPipelineRender(core: UseClipperPipelineCoreResult) {
     return findExistingExports(clips, signatures, state.exportHistory);
   }, [
     core.disabledCollageRegionIds,
+    core.clipFramingRevision,
     sessionRef,
     settings,
     state.clipPreviews,

@@ -4,7 +4,7 @@ import type { WordCue } from "../lib/media/transcription-export.util";
 import type { AiClipSegmentRange } from "../engine/types/transcript.types";
 import {
   nextWordRangeSelection,
-  selectionFromTimeRange,
+  selectionWithinTimeRange,
   timeRangeFromSelection,
   wordRangeTimes,
   type WordRangeSelection,
@@ -36,6 +36,8 @@ export function useClipperManualClipRange({
     startIdx: null,
     endIdx: null,
   });
+  /** The range was set with the time slider: save its exact times (silence before / after kept). */
+  const [exactTimes, setExactTimes] = useState(false);
   const [clipTimeRange, setClipTimeRange] = useState<[number, number]>([
     0,
     Math.max(durationSec, 0),
@@ -56,11 +58,18 @@ export function useClipperManualClipRange({
         startIdx: initialRange.wordStartIdx,
         endIdx: initialRange.wordEndIdx,
       });
+      const exact = initialRange.exactStartSec != null && initialRange.exactEndSec != null;
+      setExactTimes(exact);
       setClipTimeRange(
-        times ? [times.startSec, times.endSec] : [0, duration],
+        exact
+          ? [initialRange.exactStartSec!, initialRange.exactEndSec!]
+          : times
+            ? [times.startSec, times.endSec]
+            : [0, duration],
       );
       return;
     }
+    setExactTimes(false);
     setSelection({ startIdx: null, endIdx: null });
     setClipTimeRange([0, duration]);
   }, [durationSec, initialRange, words]);
@@ -81,10 +90,10 @@ export function useClipperManualClipRange({
     [],
   );
 
-  const selectedTimes = useMemo(
-    () => wordRangeTimes(words, selection.startIdx, selection.endIdx),
-    [selection.endIdx, selection.startIdx, words],
-  );
+  const selectedTimes = useMemo(() => {
+    if (exactTimes) return { startSec: clipTimeRange[0], endSec: clipTimeRange[1] };
+    return wordRangeTimes(words, selection.startIdx, selection.endIdx);
+  }, [clipTimeRange, exactTimes, selection.endIdx, selection.startIdx, words]);
 
   /** Updates the UI time immediately; the actual video seek is coalesced to one per frame. */
   const seekTo = useCallback((timeSec: number) => {
@@ -108,7 +117,9 @@ export function useClipperManualClipRange({
         start = Math.max(0, end - WINDOW_MIN_SPAN_SEC);
       }
       setClipTimeRange([start, end]);
-      setSelection(selectionFromTimeRange(words, start, end));
+      // The words inside the chosen time (the clip keeps any silence or music around them).
+      setSelection(selectionWithinTimeRange(words, start, end));
+      setExactTimes(true);
       seekTo(start);
     },
     [durationSec, seekTo, words],
@@ -133,6 +144,7 @@ export function useClipperManualClipRange({
       }
       const next = nextWordRangeSelection(selection, index);
       setSelection(next);
+      setExactTimes(false);
       if (next.endIdx == null) {
         setClipTimeRange([word.start, Math.max(word.end, word.start)]);
       } else {
@@ -193,9 +205,18 @@ export function useClipperManualClipRange({
 
   const canSave = selection.startIdx != null && selection.endIdx != null;
 
+  /** What to save: the words, plus the exact times when they were set with the slider. */
+  const savedRange = (): AiClipSegmentRange | null => {
+    if (selection.startIdx == null || selection.endIdx == null) return null;
+    const range = { wordStartIdx: selection.startIdx, wordEndIdx: selection.endIdx };
+    return exactTimes ? { ...range, exactStartSec: clipTimeRange[0], exactEndSec: clipTimeRange[1] } : range;
+  };
+
   return {
     video,
     bindVideo,
+    exactTimes,
+    savedRange,
     isPlaying,
     playbackMode,
     setPlaybackMode,

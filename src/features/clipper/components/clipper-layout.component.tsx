@@ -43,7 +43,7 @@ export const ClipperLayout: React.FC<ClipperLayoutProps> = ({
   const location = useLocation();
   const isSessionPage = /^\/clipper\/[^/]+/.test(location.pathname);
   const backTo = "/clipper";
-  const backLabel = isSessionPage ? "Back to clipper projects" : "Back to clipper";
+  const backLabel = isSessionPage ? "Back to projects" : "Back";
   const titleBarHandlers = useTauriTitleBarHandlers({ excludeSelectors: ["a", "button"] });
 
   const scrollbarCss = {

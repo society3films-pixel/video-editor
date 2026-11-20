@@ -1,3 +1,4 @@
+import { AlertTriangle } from "lucide-react";
 import React, { useCallback } from "react";
 import { Box, Checkbox, HStack, Text, VStack } from "@chakra-ui/react";
 import { CLIPPER_FORMAT_DEFS, getClipperCardFrameSize } from "../shared/formats.util";
@@ -24,6 +25,8 @@ export interface ClipperRenderQueueSetupRowProps {
   setCanvasRef: (clipIndex: number, formatId: string, el: HTMLCanvasElement | null) => void;
   onToggleClipFormat: (clipIndex: number, formatId: string) => void;
   onSetAllFormatsForClip: (clipIndex: number, enabled: boolean) => void;
+  /** Framing warnings for this clip (from the framing check), if any. */
+  framingWarnings?: string[];
 }
 
 export const ClipperRenderQueueSetupRow = React.memo(function ClipperRenderQueueSetupRow({
@@ -36,6 +39,7 @@ export const ClipperRenderQueueSetupRow = React.memo(function ClipperRenderQueue
   setCanvasRef,
   onToggleClipFormat,
   onSetAllFormatsForClip,
+  framingWarnings,
 }: ClipperRenderQueueSetupRowProps) {
   const { theme } = useClipperUi();
   const clipIndex = preview.clip.index;
@@ -107,6 +111,14 @@ export const ClipperRenderQueueSetupRow = React.memo(function ClipperRenderQueue
         <Text fontSize="sm" fontWeight="semibold" color={theme.text.primary}>
           Clip {clipIndex + 1}
         </Text>
+        {framingWarnings?.length ? (
+          <HStack gap={1} title={framingWarnings.join("\n")} color={theme.status.warning} fontSize="xs" cursor="help">
+            <AlertTriangle size={12} />
+            <Text>
+              {framingWarnings.length} framing issue{framingWarnings.length === 1 ? "" : "s"}
+            </Text>
+          </HStack>
+        ) : null}
         <Text fontSize="xs" color={theme.text.muted}>
           {formatDurationMmSs(preview.clip.startSec)}–{formatDurationMmSs(preview.clip.endSec)}
         </Text>

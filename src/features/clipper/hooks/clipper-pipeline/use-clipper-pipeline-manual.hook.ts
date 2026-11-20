@@ -135,6 +135,9 @@ export function useClipperPipelineManual(core: UseClipperPipelineCoreResult) {
       const segment: AiClipSegmentRange = {
         wordStartIdx: Math.min(range.wordStartIdx, range.wordEndIdx),
         wordEndIdx: Math.max(range.wordStartIdx, range.wordEndIdx),
+        ...(range.exactStartSec != null && range.exactEndSec != null
+          ? { exactStartSec: Math.min(range.exactStartSec, range.exactEndSec), exactEndSec: Math.max(range.exactStartSec, range.exactEndSec) }
+          : {}),
       };
       const existing = currentManualRanges(session);
 

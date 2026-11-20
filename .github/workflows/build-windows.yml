@@ -1,0 +1,99 @@
+name: Build Windows app
+
+# Builds open-clipper.exe on a GitHub Windows machine with scripts/build-windows-quick.ps1
+# and uploads it as a downloadable artifact. FFmpeg and the Rust build are cached, so only
+# the first run is slow.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/sharp-pasteur-c7nh2i
+    paths-ignore:
+      - "**.md"
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Static FFmpeg takes ~45 minutes to compile; keep it between runs.
+      - name: Restore FFmpeg (vcpkg)
+        id: ffmpeg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\ffmpeg\vcpkg\installed
+          key: ffmpeg8.1-x64-windows-static-vcpkg2026.07.29
+
+      # The DirectML speech library (sherpa-onnx) takes ~15-20 minutes to compile.
+      - name: Restore GPU speech library
+        id: sherpa-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: third_party/sherpa-onnx-directml/install
+          key: sherpa-directml-${{ hashFiles('scripts/models/build-sherpa-directml.ps1', 'scripts/models/patches/**') }}
+
+      - name: Restore Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target-fast"
+          cache-on-failure: true
+          # Bump with the FFmpeg version: ffmpeg-sys-next caches bindings generated from its headers.
+          prefix-key: v1-ffmpeg8.1
+
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build-windows-quick.ps1 -NoLaunch -GpuSpeech
+
+      # Save FFmpeg as soon as it exists, even if a later step fails.
+      - name: Check FFmpeg
+        id: ffmpeg-built
+        if: always() && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $built = Test-Path "C:\ffmpeg\vcpkg\installed\x64-windows-static\lib\avcodec.lib"
+          "built=$($built.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+      - name: Save FFmpeg (vcpkg)
+        if: always() && steps.ffmpeg-built.outputs.built == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\ffmpeg\vcpkg\installed
+          key: ffmpeg8.1-x64-windows-static-vcpkg2026.07.29
+
+      - name: Save GPU speech library
+        if: always() && steps.sherpa-cache.outputs.cache-hit != 'true' && hashFiles('third_party/sherpa-onnx-directml/install/lib/sherpa-onnx-c-api.lib') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: third_party/sherpa-onnx-directml/install
+          key: sherpa-directml-${{ hashFiles('scripts/models/build-sherpa-directml.ps1', 'scripts/models/patches/**') }}
+
+      - name: Collect the app
+        shell: pwsh
+        run: |
+          $release = "src-tauri/target-fast/release"
+          $out = "open-clipper-windows"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "$release/open-clipper.exe" $out
+          Copy-Item "$release/*.dll" $out -Exclude "DirectML.Debug.dll"
+          if (Test-Path "$release/resources") { Copy-Item "$release/resources" $out -Recurse }
+          Get-ChildItem $out -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+          foreach ($required in @("onnxruntime_ort.dll", "DirectML.dll", "resources/models/clipper-vision/manifest.json")) {
+            if (-not (Test-Path (Join-Path $out $required))) { throw "The app download would be missing $required." }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-clipper-windows
+          path: open-clipper-windows
+          retention-days: 14

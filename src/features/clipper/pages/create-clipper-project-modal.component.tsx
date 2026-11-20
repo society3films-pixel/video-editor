@@ -84,7 +84,7 @@ export function CreateClipperProjectModal({
     <StyledModal
       isOpen={isOpen}
       onClose={handleClose}
-      title="New Clipper Project"
+      title="New shorts project"
       size="lg"
       placement="center"
       isLoading={isLoading}
@@ -128,7 +128,7 @@ export function CreateClipperProjectModal({
             <SpecificTitle fontSize="sm">Description (optional)</SpecificTitle>
           </Field.Label>
           <Textarea
-            placeholder="Notes about this clip session"
+            placeholder="Notes for yourself"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             borderRadius="2xl"

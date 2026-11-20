@@ -30,6 +30,7 @@ import type { ClipperClipWindow, RenderClipperResult } from "../types/render.typ
 import { segmentsTotalDuration } from "../segmentation/clip-time.util";
 import {
   drawClipperFrame,
+  frameNeedsCanvas,
   resolveClipperOutputSize,
 } from "./frame-draw.util";
 import { resolveClipperFrameGeometry } from "./frame-geometry.util";
@@ -258,7 +259,7 @@ export async function renderClipperFormat(
 
     const canvasCache = new FrameCanvasCache();
     const encodeBackpressure = new EncodeBackpressure();
-    const skipCanvas = !render.settings.captions.enabled && !hasBranding;
+    const skipCanvas = !frameNeedsCanvas(render, hasBranding);
     let encodedFrames = 0;
 
     const encodeSample = async (

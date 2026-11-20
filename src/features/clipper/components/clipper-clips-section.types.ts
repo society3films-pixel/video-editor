@@ -8,6 +8,10 @@ import type { AutoPartsSegmentLengthSec } from "../persistence/project-metadata.
 export type UpsertManualClipHandler = (range: AiClipSegmentRange, editIndex?: number) => void;
 
 export interface ClipperClipsSectionProps {
+  /** The project's range video (for finding performances in its sound). */
+  getRangeFile?: () => File | null;
+  /** Shows the AI clips and opens the render queue (after picking clips with AI). */
+  onRenderAiClips?: () => void;
   projectId: string;
   clipPreviews: ClipperClipPreview[];
   autoPartsClipPreviews: ClipperClipPreview[];

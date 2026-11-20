@@ -47,7 +47,10 @@ export function ClipperManualClipsSection({
   const initialRange = useMemo(() => {
     if (editor?.mode !== "edit") return null;
     const preview = clipPreviews.find((item) => item.clip.index === editor.clipIndex);
-    return preview ? wordSpanForClip(preview.clip, rangeWords) : null;
+    if (!preview) return null;
+    const span = wordSpanForClip(preview.clip, rangeWords);
+    // Open on the clip's real times (it may reach past its words).
+    return span ? { ...span, exactStartSec: preview.clip.startSec, exactEndSec: preview.clip.endSec } : null;
   }, [clipPreviews, editor, rangeWords]);
 
   const canAuthor = rangeWords.length > 0 && Boolean(onUpsertManualClip);

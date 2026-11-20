@@ -1,3 +1,4 @@
+import type { ClipFramingMap } from "./clip-framing.util";
 import type { WordCue } from "../lib/media/transcription-export.util";
 import {
   buildCollageTracksForRegions,
@@ -62,6 +63,8 @@ export interface ClipperSession {
   clipSourceMode: ClipSourceMode;
   /** Ids of auto-detected two-speaker regions (see CollageRegion) where the user turned split-screen off. */
   disabledCollageRegionIds: string[];
+  /** User framing keyframes per clip (see clip-framing.util), keyed by clip windows. */
+  clipFraming?: ClipFramingMap;
   /** Active clip set used for preview/render (auto-parts, AI, or manual). */
   clips: ClipperGeneratedClip[];
   activeClipIndex: number;
@@ -95,6 +98,7 @@ export function normalizeClipperSession(session: ClipperSession): ClipperSession
   session.manualClips = session.manualClips ?? [];
   session.clipSourceMode = session.clipSourceMode ?? "auto-parts";
   session.disabledCollageRegionIds = session.disabledCollageRegionIds ?? [];
+  session.clipFraming = session.clipFraming ?? {};
   session.smartCropAnalysis = session.smartCropAnalysis ?? null;
   session.clips = clipsForSourceMode(session);
   return session;

@@ -1,5 +1,11 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { loadTemplates, type EditTemplate } from "../editor/edit-templates.util";
+import { renderClipsWithLook } from "../editor/render-with-look.util";
+import { appToast } from "../../../shared/utils/toast.service";
 import { Box, Center, Text } from "@chakra-ui/react";
+import { checkClipFraming, FRAMING_ISSUE_LABEL } from "../editor/framing-check.util";
+import { getClipperFormatDef } from "../shared/formats.util";
+import { useWatchFolderAutomation } from "../hooks/use-watch-folder-automation.hook";
 import { ClipperLayout } from "../components/clipper-layout.component";
 import { ClipperExportsView } from "../components/clipper-exports-view.component";
 import { ClipperRenderQueue } from "../components/clipper-render-queue.component";
@@ -17,14 +23,38 @@ import type { ClipperSessionViewProps } from "../shared/clipper-session-view.typ
 export type { ClipperSessionViewProps } from "../shared/clipper-session-view.types";
 
 export function ClipperSessionView({ project, token, loaded }: ClipperSessionViewProps) {
+  // Looks for the render queue (built-in trending looks and saved templates).
+  const [looks, setLooks] = useState<EditTemplate[]>([]);
+  const [lookId, setLookId] = useState<string>(() => {
+    try {
+      return localStorage.getItem("openclipper.renderQueue.look") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [lookProgress, setLookProgress] = useState<{ label: string; done: number; total: number; ratio: number } | null>(null);
+  const lookAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    void loadTemplates().then(setLooks).catch(() => {});
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("openclipper.renderQueue.look", lookId);
+    } catch {
+      // Not remembered; fine.
+    }
+  }, [lookId]);
   const { theme, errorPanel } = useClipperUi();
   const session = useClipperSessionView({ project, token, loaded });
+  useWatchFolderAutomation(project.id, session);
   const {
     state,
     settings,
     updateSettings,
     confirmRange,
     refreshExportHistory,
+    getClipEditorSource,
+    saveClipFramingTrack,
     reset,
     sourceUrl,
     rangeLocked,
@@ -42,6 +72,51 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
     goToExports,
     stopRender,
   } = session;
+  // Framing check for the render queue: warnings only, in the vertical format (the one most clips are made for).
+  const framingWarnings = useMemo(() => {
+    const warnings = new Map<number, string[]>();
+    if (!visibility.showQueueSetup) return warnings;
+    const formatId = getClipperFormatDef("vertical-short")?.id ?? settings.formats.enabledFormatIds[0];
+    if (!formatId) return warnings;
+    for (const preview of state.clipPreviews) {
+      const source = session.getClipEditorSourceForClip(preview.clip.index, formatId);
+      if (!source) continue;
+      const issues = checkClipFraming(source).filter((issue) => issue.severity === "warning");
+      if (issues.length) warnings.set(preview.clip.index, issues.map((issue) => `Shot ${issue.shotIndex + 1}: ${FRAMING_ISSUE_LABEL[issue.kind]}`));
+    }
+    return warnings;
+  }, [state.clipPreviews, visibility.showQueueSetup, session.clipFramingRevision]);
+
+  const renderWithLook = async (look: EditTemplate) => {
+    const controller = new AbortController();
+    lookAbortRef.current = controller;
+    setLookProgress({ label: "Starting", done: 0, total: 1, ratio: 0 });
+    try {
+      const outcome = await renderClipsWithLook(
+        project.id,
+        look,
+        renderQueue.formatIdsByClip,
+        (clipIndex, formatId) => session.getClipEditorSourceForClip(clipIndex, formatId),
+        { signal: controller.signal, onProgress: (done, total, label, ratio) => setLookProgress({ done, total, label, ratio }) },
+      );
+      refreshExportHistory();
+      if (outcome.saved) {
+        appToast.success(
+          `Rendered ${outcome.saved} with “${look.name}”`,
+          outcome.failed.length ? `Not rendered: ${outcome.failed.join("; ")}` : "They're in Your exports.",
+        );
+        goToExports();
+      } else {
+        appToast.error("Nothing was rendered", outcome.failed.join("; ") || "No clips or formats were selected.");
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) appToast.error("Render stopped", error instanceof Error ? error.message : String(error));
+      else refreshExportHistory();
+    } finally {
+      lookAbortRef.current = null;
+      setLookProgress(null);
+    }
+  };
 
   return (
     <ClipperLayout
@@ -109,11 +184,19 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
           onSetAllFormatsForClip={renderQueue.setAllFormatsForClip}
           isRendering={isRendering}
           existingExports={existingExports}
-          onRender={() =>
-            renderQueue.startQueuedRender({ skipExisting: settings.formats.skipExisting })
-          }
+          onRender={() => {
+            const look = looks.find((item) => item.id === lookId);
+            if (look) void renderWithLook(look);
+            else renderQueue.startQueuedRender({ skipExisting: settings.formats.skipExisting });
+          }}
+          looks={looks}
+          lookId={lookId}
+          onLookChange={setLookId}
+          lookProgress={lookProgress}
+          onStopLook={() => lookAbortRef.current?.abort()}
           exportCount={exportCount}
           onViewExports={goToExports}
+          framingWarnings={framingWarnings}
         />
         </>
       )}
@@ -151,6 +234,7 @@ export function ClipperSessionView({ project, token, loaded }: ClipperSessionVie
           sourceFileName={state.sourceFileName}
           projectId={project.id}
           onRefreshHistory={refreshExportHistory}
+          editorBridge={{ getSource: getClipEditorSource, saveFraming: saveClipFramingTrack }}
         />
       )}
 

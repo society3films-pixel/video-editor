@@ -289,7 +289,7 @@ export function ClipperPublishView() {
           fontWeight="bold"
           color={theme.text.primary}
         >
-          Publish map
+          Publish
         </SecondaryMainTitle>
         <HStack gap={2} flexWrap="wrap">
           <OutlinedActionButton

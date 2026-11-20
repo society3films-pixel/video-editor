@@ -53,6 +53,38 @@ export type CaptionEntrance =
   | "word-scale"
   | "word-rise";
 
+/** User overrides on top of a caption preset (the caption style designer). */
+export type CaptionStyleCustom = Partial<
+  Pick<
+    CaptionPresetDefinition,
+    | "fontFamily"
+    | "fontWeight"
+    | "uppercase"
+    | "textColor"
+    | "activeTextColor"
+    | "activeColor"
+    | "outlineColor"
+    | "outlineWidthEm"
+    | "activeEffect"
+    | "entrance"
+    | "plateStyle"
+    | "plateColor"
+  >
+>;
+
+export const CAPTION_FONT_FAMILIES: readonly CaptionFontFamily[] = [
+  "Inter",
+  "Montserrat",
+  "Poppins",
+  "Outfit",
+  "Anton",
+  "Barlow Condensed",
+  "Rajdhani",
+  "Dancing Script",
+];
+export const CAPTION_ACTIVE_EFFECTS: readonly CaptionActiveEffect[] = ["none", "color", "gradient-pill", "glow", "pop", "beast-pop", "hustle"];
+export const CAPTION_ENTRANCES: readonly CaptionEntrance[] = ["none", "page-fade", "group-fade", "word-blur", "word-scale", "word-rise"];
+
 export interface CaptionGradient {
   from: string;
   to: string;

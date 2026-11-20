@@ -12,6 +12,22 @@ import {
 import { resolveAutoFlipCropRender } from "./crop-resolvers.util";
 import { resolveFrameLayoutBranch } from "./frame-layout-branch.util";
 import { resolveClipperLayoutRender } from "./layout-resolvers.util";
+import {
+  applyFramingOverride,
+  evaluateClipFraming,
+  clipShotRangeAt,
+  fitWholeFrame,
+  forcedSplitLayout,
+  isForcedSplit,
+  screenFaceLayout,
+  slowZoomCrop,
+  type ClipFramingRender,
+} from "./framing-override.util";
+import { sourceTimeToLocalTime } from "../segmentation/clip-time.util";
+import type { FaceSampleCache } from "../reframe/cache.util";
+import { largestFaceTrackFor, splitFaceTracksFor, trackedPositionAt } from "./split-tracking.util";
+import { firstPanelShare, speakerEmphasisAt } from "./speaker-emphasis.util";
+import type { ClipperClipSegmentWindow } from "../segmentation/segmentation.types";
 
 export interface ClipperFramePanelGeometry {
   source: ClipperCropRect;
@@ -21,6 +37,8 @@ export interface ClipperFramePanelGeometry {
 export interface ClipperFrameGeometry {
   mode: "single-crop" | "split" | "contain";
   panels: ClipperFramePanelGeometry[];
+  /** Fill behind the panels with a blurred copy of the whole frame. */
+  blurBackground?: boolean;
 }
 
 // A smart-crop blob is immutable for the lifetime of a render/session.  The
@@ -75,10 +93,39 @@ function splitDestinations(count: number, output: FrameEffectSize): ClipperFrame
 }
 
 /** Exact crop/panel geometry consumed by the canvas renderer, without captions. */
-export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[] }): ClipperFrameGeometry {
+export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source: FrameEffectSize, output: FrameEffectSize, t: number, render: { smartCropAnalysis?: ClipperFrameAnalysis | null; disabledCollageRegionIds: string[]; segments?: ClipperClipSegmentWindow[]; framing?: ClipFramingRender; faceCache?: FaceSampleCache | null }): ClipperFrameGeometry {
   const resolved = formatDef.mode === "crop" ? resolveClipperLayoutRender(render.smartCropAnalysis, formatDef.id, source, t) : undefined;
   const regions = formatDef.mode === "crop" ? cachedLayoutRegions(render.smartCropAnalysis) : [];
-  const { plannedLayout } = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
+  const branch = resolveFrameLayoutBranch(resolved, findActiveRegion(regions, t), render.disabledCollageRegionIds);
+  const localT = render.segments?.length ? sourceTimeToLocalTime(render.segments, t) : Math.max(0, t);
+  const override = render.framing?.track.keyframes.length ? evaluateClipFraming(render.framing, localT) : undefined;
+  if (override?.fit === "blur" && !isForcedSplit(override) && formatDef.mode === "crop") {
+    return { mode: "contain", panels: [fitWholeFrame(source, output, override.zoom)], blurBackground: true };
+  }
+  if (isForcedSplit(override) && override!.screen && formatDef.mode === "crop") {
+    const face = render.faceCache ? trackedPositionAt(largestFaceTrackFor(render.faceCache), t) : null;
+    return {
+      mode: "split",
+      panels: screenFaceLayout(override!.split!, source, output, face, Boolean(override!.splitSwap)),
+      blurBackground: true,
+    };
+  }
+  if (isForcedSplit(override) && formatDef.mode === "crop") {
+    let faces: Array<{ x: number; y: number } | null> | undefined;
+    if (override!.splitFollow && render.faceCache) {
+      const tracks = splitFaceTracksFor(render.faceCache);
+      const left = trackedPositionAt(tracks.left, t);
+      const right = trackedPositionAt(tracks.right, t);
+      faces = override!.splitSwap ? [right, left] : [left, right];
+    }
+    const share = override!.splitFollow && override!.splitEmphasis
+      ? firstPanelShare(speakerEmphasisAt(render.framing!.track.speakers, localT), Boolean(override!.splitSwap))
+      : 0.5;
+    return { mode: "split", panels: forcedSplitLayout(override!.split!, source, output, faces, share) };
+  }
+  const plannedLayout = override?.singleShot && branch.plannedLayout?.mode === "split"
+    ? { ...branch.plannedLayout, mode: "single-crop" as const, viewports: [branch.plannedLayout.viewports[0]!] }
+    : branch.plannedLayout;
   if (plannedLayout?.mode === "split" && plannedLayout.viewports.length >= 2) {
     const viewports = plannedLayout.viewports.slice(0, 3);
     const destinations = splitDestinations(viewports.length, output);
@@ -89,5 +136,16 @@ export function resolveClipperFrameGeometry(formatDef: ClipperFormatDef, source:
       ? resolveAutoFlipCropRender(render.smartCropAnalysis, formatDef.id, source, t)?.cropRect
       : undefined)
     ?? cropRectForCentroid(source.width, source.height, 0.5, 0.5, output.width / output.height);
-  return { mode: plannedLayout?.mode ?? "single-crop", panels: [{ source: coverCrop(clampToContent(crop, render.smartCropAnalysis?.contentRect, source), output), destination: { x: 0, y: 0, width: output.width, height: output.height } }] };
+  let finalCrop = coverCrop(clampToContent(crop, render.smartCropAnalysis?.contentRect, source), output);
+  if (override) finalCrop = applyFramingOverride(finalCrop, override, source, output);
+  if (override?.slowZoom && render.framing) {
+    const duration = render.segments?.length
+      ? render.segments.reduce((sum, segment) => sum + Math.max(0, segment.endSec - segment.startSec), 0)
+      : Number.POSITIVE_INFINITY;
+    const shot = clipShotRangeAt(render.framing, localT, duration);
+    if (Number.isFinite(shot.end) && shot.end > shot.start) {
+      finalCrop = slowZoomCrop(finalCrop, override.slowZoom, (localT - shot.start) / (shot.end - shot.start), source);
+    }
+  }
+  return { mode: plannedLayout?.mode ?? "single-crop", panels: [{ source: finalCrop, destination: { x: 0, y: 0, width: output.width, height: output.height } }] };
 }

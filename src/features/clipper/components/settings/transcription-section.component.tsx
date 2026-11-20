@@ -88,8 +88,8 @@ export const TranscriptionSection: React.FC<TranscriptionSectionProps> = ({
 
   const vocalsControls = (
     <TranscriptionModelRow
-      name="Vocals isolate (UVR-MDX-NET-Voc_FT)"
-      description="Runs MDX vocal separation before speech-to-text. GPU (DirectML) by default on Windows; set OPEN_CLIPPER_VOCALS_CPU=1 to force CPU."
+      name="Voice isolation"
+      description="Separates voices from music and noise before speech-to-text, so captions are cleaner. Runs on the graphics card."
       size="~67 MB"
       badge={demucs.badge}
       provider={demucs.activeProvider}
@@ -102,7 +102,7 @@ export const TranscriptionSection: React.FC<TranscriptionSectionProps> = ({
       error={
         demucs.error ??
         (!demucs.installed && !demucs.downloading
-          ? "Download the vocals model before transcribing."
+          ? "Needed for transcribing: download it once."
           : null)
       }
       onDownload={() => void demucs.handleDownload()}

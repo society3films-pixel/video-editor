@@ -3,7 +3,7 @@ import type { ClipSourceMode } from "../../shared/state.util";
 
 export const SIDE_PANEL_TAB_OPTIONS: Array<{ value: ClipSourceMode; label: string }> = [
   { value: "auto-parts", label: "Auto-parts" },
-  { value: "ai", label: "MCP" },
+  { value: "ai", label: "AI clips" },
   { value: "manual", label: "Manual" },
 ];
 

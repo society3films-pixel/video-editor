@@ -3,15 +3,54 @@ import { Flex } from "@chakra-ui/react";
 import { clipperTheme } from "../shared/theme.util";
 import { useClipperUi } from "../shared/use-clipper-ui.hook";
 
-export type ClipperHomeTab = "projects" | "integrations" | "publish" | "owners" | "settings" | "mcp";
+export type ClipperHomeTab =
+  | "projects"
+  | "integrations"
+  | "publish"
+  | "owners"
+  | "ai"
+  | "settings"
+  | "mcp";
 
-const OPTIONS: Array<{ value: ClipperHomeTab; label: string }> = [
-  { value: "projects", label: "Projects" },
-  { value: "integrations", label: "Integrations" },
-  { value: "publish", label: "Publish" },
-  { value: "owners", label: "Owners" },
-  { value: "settings", label: "Settings" },
-  { value: "mcp", label: "MCP" },
+/** The three main areas; the other tabs live inside Publish and Settings. */
+export type ClipperHomeArea = "projects" | "publish" | "settings";
+
+export const HOME_AREA_OF: Record<ClipperHomeTab, ClipperHomeArea> = {
+  projects: "projects",
+  publish: "publish",
+  owners: "publish",
+  settings: "settings",
+  ai: "settings",
+  integrations: "settings",
+  mcp: "settings",
+};
+
+/** Sub-tabs per area (first = the area's default). */
+export const HOME_SUBTABS: Record<
+  ClipperHomeArea,
+  Array<{ value: ClipperHomeTab; label: string }>
+> = {
+  projects: [],
+  publish: [
+    { value: "publish", label: "Publish" },
+    { value: "owners", label: "Channels & owners" },
+  ],
+  settings: [
+    { value: "settings", label: "General" },
+    { value: "ai", label: "AI" },
+    { value: "integrations", label: "Integrations" },
+    { value: "mcp", label: "MCP" },
+  ],
+};
+
+const OPTIONS: Array<{
+  value: ClipperHomeTab;
+  area: ClipperHomeArea;
+  label: string;
+}> = [
+  { value: "projects", area: "projects", label: "Projects" },
+  { value: "publish", area: "publish", label: "Publish" },
+  { value: "settings", area: "settings", label: "Settings" },
 ];
 
 interface ClipperHomeNavToggleProps {
@@ -39,7 +78,7 @@ export const ClipperHomeNavToggle: React.FC<ClipperHomeNavToggleProps> = ({
       flexShrink={0}
     >
       {OPTIONS.map((option) => {
-        const isActive = option.value === value;
+        const isActive = option.area === HOME_AREA_OF[value];
         return (
           <Flex
             key={option.value}

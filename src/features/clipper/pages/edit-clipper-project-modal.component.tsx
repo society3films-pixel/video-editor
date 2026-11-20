@@ -79,7 +79,7 @@ export function EditClipperProjectModal({
     <StyledModal
       isOpen={isOpen}
       onClose={handleClose}
-      title="Edit Project"
+      title="Rename project"
       size="lg"
       isLoading={isLoading}
       onFormSubmit={() => void handleSubmit()}

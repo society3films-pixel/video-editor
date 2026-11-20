@@ -166,6 +166,7 @@ export function drawClipperCaptions(
     captions.presetId,
     {
       ...preset,
+      ...captions.custom,
       anchorY,
       fontSizeRatio: preset.fontSizeRatio * fontSizeScale,
       wordsPerGroup: captions.wordsPerGroup,
